@@ -4,6 +4,10 @@ import tensorflow as tf
 
 from sklearn.linear_model import LogisticRegression
 
+"""
+Also objective selection should be here
+"""
+
 class ClimLogProbLayer(tf.keras.layers.Layer):
     """
     For each class (probability of positive) it requires the fitted coeficients
