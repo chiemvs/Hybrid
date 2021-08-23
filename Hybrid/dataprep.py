@@ -3,6 +3,7 @@ import os
 import warnings
 import pandas as pd
 import numpy as np
+import xarray as xr
 
 from typing import Union, Callable
 
@@ -259,8 +260,10 @@ def perkins(fraction_positive: np.ndarray, fraction_negative: np.ndarray) -> flo
     Counting the overlap basically
     Based on Perkins et al (2007) "Evaluation of the AR4 Climate Models’ Simulated Daily Maximum Temperature, Minimum Temperature, and Precipitation over Australia Using Probability Density Functions" 
     https://journals.ametsoc.org/view/journals/clim/20/17/jcli4253.1.xml
+    sum_over_bins(min(fraction_in_one, fraction_in_other)), so ranges from 0 to 1
     """
-    pass
+    joined = np.concatenate([fraction_positive[:,np.newaxis], fraction_negative[:,np.newaxis]], axis = 1)
+    return joined.min(axis = 1).sum()
 
 def filter_predictor_set(predset: pd.DataFrame, observation: pd.Series, how: Callable = j_measure, nmost_important: int = 20, nbins: int = 20, min_samples_per_bin: int = 10, most_extreme_quantile: float = 0.95, return_measures: bool = False) -> pd.DataFrame:
     """
@@ -268,7 +271,7 @@ def filter_predictor_set(predset: pd.DataFrame, observation: pd.Series, how: Cal
     to the nmost_important for a binary predictand (assuming independence and only direct effect)
     compares (binned) distributions x|y=1 and x|y=0
     If these have little overlap then good discriminatory power
-    for binary observations the options are 'j-measure' and 'perkins'
+    for binary observations the options are 'j_measure' and 'perkins'
     Binning takes place with nbins from 1-extreme_quantile till extreme_quantile 
     """
     assert observation.dtype == bool, 'only binary predictand implemented'
@@ -295,17 +298,35 @@ def filter_predictor_set(predset: pd.DataFrame, observation: pd.Series, how: Cal
         fraction_y1 = np.unique(hist_y1, return_counts = True)[-1] / len(hist_y1) # lengths should be equivalent
         fraction_y0 = np.unique(hist_y0, return_counts = True)[-1] / len(hist_y0)
         measures.loc[key] = how(fraction_y1, fraction_y0)
-    return measures
+
+    ranked = measures.rank(method = 'first') # 1 to n (lowest to highest value)
+    if how == j_measure: # Higher means more discriminatory power
+        important = ranked > (len(ranked) - nmost_important)
+    else: # perkins: lower (less overlap) = more dcriminatory power
+        important = ranked <= nmost_important 
+    keys = important.iloc[important.values].index
+    if return_measures:
+        return predset.loc[:,keys], measures
+    else:
+        return predset.loc[:,keys]
     
 
 if __name__ == '__main__':
     leadtimepool = [4,5,6,7,8] 
-    #leadtimepool = 13
+    #leadtimepool = 15
     targetname = 'books_paper3-2_tg-ex-q0.75-7D_JJA_45r1_1D_15-t2m-q095-adapted-mean.csv'
     predictors, forc, obs = prepare_full_set(targetname, ndaythreshold = 3, leadtimepool = leadtimepool)
     obs_test, obs_trainval, g = test_trainval_split(obs, crossval = True)
 
-    jmeasures = filter_predictor_set(predictors.iloc[:,:3], obs)
+    # Test what a trend variable does. Not a trend in probability
+    # So perhaps just global mean surface temperature?
+    if True:
+        trend_path = '/nobackup/users/straaten/predsets/tg_monthly_global_mean_surface_only_trend.nc'
+        trend = xr.open_dataarray(trend_path).to_dataframe()  
+        trend.columns = pd.MultiIndex.from_tuples([('tg-anom',31,0,'mean')], names = predictors.columns.names)
+        predictors = predictors.join(trend, how = 'inner')
+    jfilter, jmeasure = filter_predictor_set(predictors, obs, return_measures = True, nmost_important = 3)
+    pfilter, pmeasure = filter_predictor_set(predictors, obs, how = perkins, return_measures = True, nmost_important = 3)
     #obs, forc = read_raw_predictand(name, 9, leadtimepool, True)
     #name = 'books_paper3-3-simple_swvl4-anom_JJA_45r1_7D-roll-mean_1-swvl-simple-mean.csv'
     #predictor = read_raw_predictor_ensmean(name, slice(None), leadtimepool) 
