@@ -4,8 +4,14 @@ import warnings
 import pandas as pd
 import numpy as np
 import xarray as xr
+try:
+    import tensorflow as tf
+except ImportError:
+    pass
 
 from typing import Union, Callable
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.linear_model import LogisticRegression
 
 sys.path.append(os.path.expanduser('~/Documents/Weave/'))
 from Weave.models import map_foldindex_to_groupedorder
@@ -15,10 +21,8 @@ from comparison import ForecastToObsAlignment
 """
 Preparation of a combined (dynamic and empirical) input output set for any statistical model
 including train validation test splitting
+including scaling
 Currently only time series
-
-TODO: scaling should be here
-TODO: pre-selection without a model (J-measure, pdf-overlap) should be here
 """
 
 def read_dynamic_data(booksname: str, separation: Union[int,slice,list[int]], clustids: Union[int,slice,list[int]]) -> pd.DataFrame:
@@ -102,12 +106,14 @@ def binarize_hotday_predictand(df: Union[pd.Series, pd.DataFrame], ndaythreshold
     Currently assumes it is the hotdays predictand
     For observations (pd.Series) it computes greater or equal than the ndaythreshold
     for forecasts it computes the probability (frequency of members) with greater or equal than the threshold 
+    To avoid probabilities of 0 (problems with logarithm) and simultaneously also of 1,
+    we do (n_exceeding + 0.5)/(n_members +1)
     """
     if isinstance(df, pd.Series):
         return df >= ndaythreshold
     elif isinstance(df, pd.DataFrame):
         greater_equal =  df.values >= ndaythreshold # 2D array (samples, members)
-        probability = greater_equal.sum(axis = 1) / float(df.shape[-1])
+        probability = (greater_equal.sum(axis = 1) + 0.5) / float(df.shape[-1] + 1)
         return pd.Series(probability, index = df.index)
     else:
         raise ValueError('Wrong type of input')
@@ -238,7 +244,6 @@ def test_trainval_split(df: Union[pd.Series, pd.DataFrame], crossval: bool = Fal
         unique_years = years.unique()
         assert nfolds <= len(unique_years), 'More folds than unique years requested. Unable to split_on_year.'
         groupsize = int(np.ceil(len(unique_years) / nfolds)) # Maximum even groupsize, except for the last fold, if unevenly divisible then last fold gets only the remainder.
-        print(groupsize)
         groups = (years - years.min()).map(lambda year: year // groupsize)  
         assert len(groups.unique()) == nfolds
         generator = GroupedGenerator(groups = groups.values)
@@ -310,6 +315,87 @@ def filter_predictor_set(predset: pd.DataFrame, observation: pd.Series, how: Cal
     else:
         return predset.loc[:,keys]
     
+"""
+Functions for prepping data for the specific neural nets 
+"""
+
+def one_hot_encoding(categorical_obs: Union[pd.Series, np.ndarray]) -> np.ndarray:
+    """
+    In as a 1D (categorical, probably binary) timeseries, out as a onehot encoded
+    2D array (nsamples, nclasses)
+    """
+    classes = np.unique(categorical_obs)
+    nclasses = len(classes)
+    if nclasses == 1:
+        warnings.warn(f'Only one class {classes} found for the one_hot encoding. Can be due to small sample size, otherwise check the data')
+    return tf.one_hot(categorical_obs, depth = max(2,nclasses)).numpy()
+
+def twoclass_log_forecastprob(prob_positive: Union[np.ndarray, pd.Series]) -> np.ndarray:
+    """
+    Generates logarithms of probabilities for the negative class
+    and the positive class of a binary predictand.
+    These are required input for the Neural network 
+    predicting deviations from the raw dynamic forecast probability.
+    Returns array (nsamples, [logprob_negative, logprob_positive])
+    So positive class last
+    """
+    if isinstance(prob_positive, pd.Series):
+        prob_positive = prob_positive.values
+    log_prob_positive = np.log(prob_positive)
+    log_prob_negative = np.log(1 - prob_positive)
+    return np.concatenate([log_prob_negative[:,np.newaxis], log_prob_positive[:,np.newaxis]], axis = 1)
+
+def scale_time(df: Union[pd.Series,pd.DataFrame], fitted_scaler: MinMaxScaler = None) -> tuple[np.ndarray,MinMaxScaler]:
+    """
+    Preparation of time input array (n_samples, 1) 
+    for logistic regression or a neural network leveraging logistic regression
+    possible to supply a pre-fitted scaler (e.g. to transform test data)
+    """
+    time_input = df.index.get_level_values('time').to_julian_date().values.reshape((df.shape[0],1))
+    if fitted_scaler is None:
+        print('fitting a new time scaler')
+        fitted_scaler = MinMaxScaler() 
+        scaled_input = fitted_scaler.fit_transform(time_input)
+    else:
+        print('using a pre-fitted time scaler')
+        scaled_input = fitted_scaler.transform(time_input)
+    return scaled_input, fitted_scaler
+
+def scale_other_features(df: pd.DataFrame, fitted_scaler: MinMaxScaler = None) -> tuple[np.ndarray, MinMaxScaler]:
+    """
+    Simple scaling of an input feature dataset (nsamples, nfeatures)
+    """
+    if fitted_scaler is None:
+        print('fitting a new feature scaler')
+        fitted_scaler = MinMaxScaler() 
+        scaled_input = fitted_scaler.fit_transform(df)
+    else:
+        print('using a pre-fitted time scaler')
+        scaled_input = fitted_scaler.transform(df)
+    return scaled_input, fitted_scaler
+
+def twoclass_logistic_regression_coefficients(binary_obs: pd.Series, return_regressor: bool = False) -> tuple[dict,np.ndarray,MinMaxScaler]:
+    """
+    Generates the coefficients for the neural network 
+    predicting deviations from the (Logistic) climatological trend in the binary predictand
+    Time (julian-day) is the only input (index of the binary obs), but needs to be min-max scaled. So fitted scaler is returned too
+    Can happen on all data (train + validation)
+    returns a prepared dictionary with coeficient and intercept arrays (2,) with the positive class last
+    also returns the scaler
+    """
+    scaled_input, time_scaler = scale_time(binary_obs)
+    # Create and fit the regressor
+    lr = LogisticRegression()
+    lr.fit(X = scaled_input, y = binary_obs.values)
+
+    neg_pos_coef = np.concatenate((-lr.coef_[0,[0]],lr.coef_[0,[0]])) # first negative class, then positive class
+    neg_pos_intercept = np.concatenate((-lr.intercept_,lr.intercept_)) 
+    climprobkwargs = dict(coefs = neg_pos_coef, intercepts= neg_pos_intercept)
+    if return_regressor:
+        return climprobkwargs, scaled_input, time_scaler, lr
+    else:
+        return climprobkwargs, scaled_input, time_scaler 
+
 
 if __name__ == '__main__':
     leadtimepool = [4,5,6,7,8] 

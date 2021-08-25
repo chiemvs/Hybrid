@@ -8,6 +8,31 @@ from sklearn.linear_model import LogisticRegression
 Also objective selection should be here
 """
 
+class BrierScore(tf.keras.metrics.Metric):
+    """
+    Accumulates the quadratic distance (p_i - o_i)**2 across batches
+    IMPORTANT: assumes that the model predictions are two-class arrays (None, 2) 
+    of which the last one is the positive class (just like the one hot encoded y_true)
+    """
+    def __init__(self, name = 'brier', **kwargs):
+        super(BrierScore, self).__init__(name = name, **kwargs)
+        self.total = self.add_weight(name="quadratic_accumulate", initializer="zeros")
+        self.count = self.add_weight(name="count", initializer="zeros")
+
+    def update_state(self, y_true, y_pred, sample_weight = None):
+        y_true = tf.cast(y_true[:,-1], 'float32')
+        y_pred = tf.cast(y_pred[:,-1], 'float32')
+        quadr_dist = tf.math.squared_difference(y_pred, y_true) # Take the last predicted class
+        self.total.assign_add(tf.reduce_sum(quadr_dist))
+        self.count.assign_add(tf.cast(tf.size(y_true),'float32'))
+    
+    def result(self):
+        return tf.divide(self.total, self.count)
+
+    def reset_state(self):
+        self.count.assign(0)
+        self.total.assign(0)
+
 class ClimLogProbLayer(tf.keras.layers.Layer):
     """
     For each class (probability of positive) it requires the fitted coeficients
@@ -68,13 +93,14 @@ def construct_climdev_model(n_classes: int, n_hidden_layers: int, n_features: in
     
     return tf.keras.models.Model(inputs = [feature_input, time_input], outputs = prob_dist)
 
-def construct_modeldev_model(n_classes: int, n_hidden_layers: int, n_features: int, climprobkwargs = {}):
+def construct_modeldev_model(n_classes: int, n_hidden_layers: int, n_features: int):
     """
     Creates a two-branch Classifier model (n_classes)
     Branch one (simple) just passes the (logarithm of) raw model probability per class
     Branch two (complex) is of depth n_hidden_layers and learns from the other input features.
     """
-    log_p_raw = tf.keras.layers.Input((n_classes,))
+    assert n_classes >= 2, 'Also for the binary case we use two output classes, that are normalized to 1'
+    log_p_raw = tf.keras.layers.Input((n_classes,)) # negative class should be the first node (in case of binary)
     feature_input = tf.keras.layers.Input((n_features,))
     initializer = tf.keras.initializers.Zeros()
     x = feature_input
@@ -82,11 +108,12 @@ def construct_modeldev_model(n_classes: int, n_hidden_layers: int, n_features: i
         x = tf.keras.layers.Dense(units = n_features, activation='elu', kernel_initializer = initializer)(x)
     x = tf.keras.layers.Dense(units = n_classes, activation='elu', kernel_initializer = initializer)(x)
     
-    output = tf.keras.layers.Add()([log_p_raw, x])
+    pre_activation = tf.keras.layers.Add()([log_p_raw, x])
+    prob_dist = tf.keras.layers.Activation('softmax')(pre_activation) # normalized to sum to 1
     
-    return tf.keras.models.Model(inputs = [feature_input, log_p_raw], outputs = output)
+    return tf.keras.models.Model(inputs = [feature_input, log_p_raw], outputs = prob_dist)
 
-preferred_loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits = False) # Under the hood logits are still used, but from cached ._keras_logits from e.g. softmax. Logits are no direct outputs of the model (only logarithms would be possible)
+preferred_loss = tf.keras.losses.CategoricalCrossentropy(from_logits = False) # Under the hood logits are still used, but from cached ._keras_logits from e.g. softmax. Logits are no direct outputs of the model (only logarithms would be possible)
 
 earlystop = tf.keras.callbacks.EarlyStopping(
         monitor='val_loss', min_delta=0, patience=10,

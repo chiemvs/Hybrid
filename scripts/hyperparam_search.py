@@ -1,39 +1,104 @@
-import sherpa
+import sys
+#import sherpa
 import numpy as np 
+import tensorflow as tf
 import pandas as pd
 
+from scipy.signal import detrend
+
 sys.path.append('..')
-from Hybrid.neuralnet import construct_modeldev_model
-from Hybrid.dataprep import prepare_full_set, test_trainval_split
+from Hybrid.neuralnet import construct_modeldev_model, construct_climdev_model, preferred_loss, earlystop, BrierScore
+from Hybrid.dataprep import prepare_full_set, test_trainval_split, filter_predictor_set, read_raw_predictand, twoclass_log_forecastprob, twoclass_logistic_regression_coefficients, scale_time, scale_other_features, one_hot_encoding
 
-leadtimepool = [4,5,6,7,8] 
-#leadtimepool = 13
+leadtimepool = [4,5,6,7] 
 targetname = 'books_paper3-2_tg-ex-q0.75-7D_JJA_45r1_1D_15-t2m-q095-adapted-mean.csv'
-predictors, forc, obs = prepare_full_set(targetname, ndaythreshold = 3, leadtimepool = leadtimepool)
-obs_test, obs_trainval, generator = test_trainval_split(obs, crossval = True, nfolds = 4)
+predictors, forc, obs = prepare_full_set(targetname, ndaythreshold = 2, leadtimepool = leadtimepool)
 X_test, X_trainval, generator = test_trainval_split(predictors, crossval = True, nfolds = 4)
+forc_test, forc_trainval, generator = test_trainval_split(forc, crossval = True, nfolds = 4)
+obs_test, obs_trainval, generator = test_trainval_split(obs, crossval = True, nfolds = 4)
 
-# limiring X
+# limiting X by j_measure
+jfilter = filter_predictor_set(X_trainval, obs_trainval, return_measures = False, nmost_important = 10, nbins=10)
 
-parameters = [sherpa.Continuous(name='lr', range=[0.005, 0.1], scale='log'),
-              sherpa.Continuous(name='dropout', range=[0., 0.4]),
-              sherpa.Ordinal(name='batch_size', range=[16, 32, 64]),
-              sherpa.Discrete(name='num_hidden_units', range=[100, 300]),
-              sherpa.Choice(name='activation', range=['relu', 'elu', 'prelu'])]
+# Also limiting by using a detrended target
+continuous_tg_name = 'books_paper3-1_tg-anom_JJA_45r1_7D-roll-mean_15-t2m-q095-adapted-mean.csv'
+continuous_obs = read_raw_predictand(continuous_tg_name, clustid = 9, separation = leadtimepool)
+continuous_obs = continuous_obs.reindex_like(X_trainval)
+# Detrending
+continuous_obs_detrended = pd.Series(detrend(continuous_obs.values), index = continuous_obs.index)
+detrended_exceedence = continuous_obs_detrended > continuous_obs_detrended.quantile(0.75)
 
-algorithm = sherpa.algorithms.RandomSearch(max_num_trials=150)
-study = sherpa.Study(parameters=parameters,
-                     algorithm=algorithm,
-                     lower_is_better=False)
+jfilter_det = filter_predictor_set(X_trainval, detrended_exceedence, return_measures = False, nmost_important = 10, nbins=10)
 
-for trial in study:
-    model = init_model(trial.parameters)
-    for trainind, valind in generator:
-        training_error = model.fit(epochs=1)
-        validation_error = model.evaluate()
-        study.add_observation(trial=trial,
-                              iteration=iteration,
-                              objective=validation_error,
-                              context={'training_error': training_error})
-    generator.reset()
-    study.finalize(trial)
+final_trainval = X_trainval.loc[:,jfilter.columns.union(jfilter_det.columns)]
+
+"""
+Test the climdev keras 
+"""
+climprobkwargs, time_input, time_scaler, lr = twoclass_logistic_regression_coefficients(obs_trainval, return_regressor = True) # Internally calls upon scale_time
+feature_input, feature_scaler = scale_other_features(final_trainval)
+obs_input = one_hot_encoding(obs_trainval)
+
+results = pd.DataFrame(np.nan, index = pd.MultiIndex.from_product([generator.groupids, ['train','val']], names = ['fold','part']), columns = ['crossentropy','accuracy','brier'])
+
+for i, (trainind, valind) in enumerate(generator): # Entering the crossvalidation
+    model = construct_climdev_model(n_classes = 2, n_hidden_layers= 0, n_features = final_trainval.shape[-1], climprobkwargs=climprobkwargs)
+    #test = model([feature_input, time_input])
+
+    model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.005),
+                loss=preferred_loss, #tf.keras.losses.CategoricalCrossentropy(from_logits=False),
+                metrics=['accuracy',BrierScore()])
+    history = model.fit(x = [feature_input[trainind,:],time_input[trainind]], 
+            y = obs_input[trainind,:], 
+            epochs=20, 
+            validation_data=([feature_input[valind,:],time_input[valind]], obs_input[valind,:]), 
+            callbacks=[earlystop])
+
+    results.loc[(i,'train'),:] = model.evaluate([feature_input[trainind,:],time_input[trainind]], obs_input[trainind,:])
+    results.loc[(i,'val'),:] = model.evaluate([feature_input[valind,:],time_input[valind]], obs_input[valind,:])
+
+generator.reset()
+"""
+Test the modeldev keras
+"""
+raw_predictions = twoclass_log_forecastprob(forc_trainval)
+results2 = pd.DataFrame(np.nan, index = pd.MultiIndex.from_product([generator.groupids, ['train','val']], names = ['fold','part']), columns = ['crossentropy','accuracy','brier'])
+for i, (trainind, valind) in enumerate(generator): # Entering the crossvalidation
+    model = construct_modeldev_model(n_classes = 2, n_hidden_layers= 0, n_features = final_trainval.shape[-1])
+    model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.005),
+                loss=preferred_loss, #tf.keras.losses.CategoricalCrossentropy(from_logits=False),
+                metrics=['accuracy',BrierScore()])
+    history = model.fit(x = [feature_input[trainind,:],raw_predictions[trainind]], 
+            y = obs_input[trainind,:], 
+            epochs=20, 
+            validation_data=([feature_input[valind,:],raw_predictions[valind]], obs_input[valind,:]), 
+            callbacks=[earlystop])
+    results2.loc[(i,'train'),:] = model.evaluate([feature_input[trainind,:],raw_predictions[trainind]], obs_input[trainind,:])
+    results2.loc[(i,'val'),:] = model.evaluate([feature_input[valind,:],raw_predictions[valind]], obs_input[valind,:])
+
+"""
+Hyperparam optimization
+"""
+
+#parameters = [sherpa.Continuous(name='lr', range=[0.005, 0.1], scale='log'),
+#              sherpa.Continuous(name='dropout', range=[0., 0.4]),
+#              sherpa.Ordinal(name='batch_size', range=[16, 32, 64]),
+#              sherpa.Discrete(name='num_hidden_units', range=[100, 300]),
+#              sherpa.Choice(name='activation', range=['relu', 'elu', 'prelu'])]
+#
+#algorithm = sherpa.algorithms.RandomSearch(max_num_trials=150)
+#study = sherpa.Study(parameters=parameters,
+#                     algorithm=algorithm,
+#                     lower_is_better=False)
+#
+#for trial in study:
+#    model = init_model(trial.parameters)
+#    for trainind, valind in generator:
+#        training_error = model.fit(epochs=1)
+#        validation_error = model.evaluate()
+#        study.add_observation(trial=trial,
+#                              iteration=iteration,
+#                              objective=validation_error,
+#                              context={'training_error': training_error})
+#    generator.reset()
+#    study.finalize(trial)
