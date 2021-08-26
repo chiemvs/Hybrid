@@ -1,12 +1,14 @@
 import sys
+import os
 #import sherpa
 import numpy as np 
 import tensorflow as tf
 import pandas as pd
 
 from scipy.signal import detrend
+from sklearn.metrics import brier_score_loss
 
-sys.path.append('..')
+sys.path.append(os.path.expanduser('~/Documents/Hybrid/'))
 from Hybrid.neuralnet import construct_modeldev_model, construct_climdev_model, preferred_loss, earlystop, BrierScore
 from Hybrid.dataprep import prepare_full_set, test_trainval_split, filter_predictor_set, read_raw_predictand, twoclass_log_forecastprob, twoclass_logistic_regression_coefficients, scale_time, scale_other_features, one_hot_encoding
 
@@ -75,6 +77,48 @@ for i, (trainind, valind) in enumerate(generator): # Entering the crossvalidatio
             callbacks=[earlystop])
     results2.loc[(i,'train'),:] = model.evaluate([feature_input[trainind,:],raw_predictions[trainind]], obs_input[trainind,:])
     results2.loc[(i,'val'),:] = model.evaluate([feature_input[valind,:],raw_predictions[valind]], obs_input[valind,:])
+
+generator.reset()
+
+"""
+Test RF Hybrid model only empirical info and dynamical info of the intermediate variables
+"""
+sys.path.append(os.path.expanduser('~/Documents/Weave/'))
+from Weave.models import HybridExceedenceModel, fit_predict_evaluate
+
+params = dict(fit_base_to_all_cv = True, max_depth = 5, n_estimators = 2500, min_samples_split = 30, max_features = 0.95, n_jobs = 5)
+evaluate_kwds = dict(scores = [brier_score_loss], score_names = ['brier'])
+
+results3 = pd.DataFrame(np.nan, index = pd.MultiIndex.from_product([generator.groupids, ['train','val']], names = ['fold','part']), columns = ['brier'])
+for i, (trainind, valind) in enumerate(generator): # Entering the crossvalidation
+    h = HybridExceedenceModel(**params)
+    scores = fit_predict_evaluate(model = h, X_in = final_trainval.iloc[trainind,:], y_in = obs_trainval.iloc[trainind],X_val = final_trainval.iloc[valind,:], y_val = obs_trainval.iloc[valind], evaluate_kwds = evaluate_kwds)
+    results3.loc[(i,'train'),:] = scores.loc['brier']
+    results3.loc[(i,'val'),:] = scores.loc['brier'] * scores.loc['brier_val/train']
+
+generator.reset()
+"""
+Test RF Hybrid model including forecast temperature
+"""
+forecasts = forc_trainval.copy()
+forecasts.name = 'pi'
+full_trainval = final_trainval.join(forecasts)
+results4 = pd.DataFrame(np.nan, index = pd.MultiIndex.from_product([generator.groupids, ['train','val']], names = ['fold','part']), columns = ['brier'])
+for i, (trainind, valind) in enumerate(generator): # Entering the crossvalidation
+    h = HybridExceedenceModel(**params)
+    scores = fit_predict_evaluate(model = h, X_in = full_trainval.iloc[trainind,:], y_in = obs_trainval.iloc[trainind],X_val = full_trainval.iloc[valind,:], y_val = obs_trainval.iloc[valind], evaluate_kwds = evaluate_kwds)
+    results4.loc[(i,'train'),:] = scores.loc['brier']
+    results4.loc[(i,'val'),:] = scores.loc['brier'] * scores.loc['brier_val/train']
+
+generator.reset()
+
+"""
+Benchmarks
+"""
+benchmarks = pd.DataFrame(np.nan, index = pd.MultiIndex.from_product([generator.groupids, ['val'], ['raw','trend']], names = ['fold','part','reference']), columns = ['brier'])
+for i, (trainind, valind) in enumerate(generator): # Entering the crossvalidation
+    benchmarks.loc[(i,'val','raw'),:] = brier_score_loss(y_true = obs_trainval.iloc[valind], y_prob = forc_trainval.iloc[valind])
+    benchmarks.loc[(i,'val','trend'),:] = brier_score_loss(y_true = obs_trainval.iloc[valind], y_prob = lr.predict_proba(time_input)[valind,-1])
 
 """
 Hyperparam optimization
