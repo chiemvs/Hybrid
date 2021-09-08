@@ -73,6 +73,14 @@ def read_raw_predictor_ensmean(booksname: str, clustid: Union[int,slice,list[int
     ensmean = df['forecast'].mean(axis = 1)
     return ensmean.unstack('clustid') # clustid into the columns (different predictors)
 
+def read_raw_predictor_regimes(booksname: str, clustid: Union[int,slice,list[int]], separation: Union[int,slice,list[int]]) -> pd.DataFrame:
+    """
+    Loading of the forecast from a matched regime set
+    """
+    df = read_dynamic_data(booksname = booksname, separation = separation, clustids = clustid)
+    df.columns = df.columns.droplevel('number')
+    return df['forecast'].unstack('clustid')
+
 def annotate_raw_predictor(predictor: pd.DataFrame, variable: str, timeagg: int, metric: str = 'mean') -> pd.DataFrame:
     """
     Expands the column index with levels for variable and timeagg
@@ -107,18 +115,25 @@ def binarize_hotday_predictand(df: Union[pd.Series, pd.DataFrame], ndaythreshold
     For observations (pd.Series) it computes greater or equal than the ndaythreshold
     for forecasts it computes the probability (frequency of members) with greater or equal than the threshold 
     To avoid probabilities of 0 (problems with logarithm) and simultaneously also of 1,
-    we do (n_exceeding + 0.5)/(n_members +1)
+    we do have the option to do (m - a) / (M + 1 - 2a)
+    where m is the rank of the observation in that set (positions 1 to 12)
+    and where M is the number of positions (12) which is n_members + 1
+    We choose to do Tukey plotting position (a = 1/3)
     """
     if isinstance(df, pd.Series):
         return df >= ndaythreshold
     elif isinstance(df, pd.DataFrame):
+        alpha = 1/3 
+        n_positions = df.shape[-1] + 1
         greater_equal =  df.values >= ndaythreshold # 2D array (samples, members)
-        probability = (greater_equal.sum(axis = 1) + 0.5) / float(df.shape[-1] + 1)
+        n_exceeding = greater_equal.sum(axis = 1) # the rank of the threshold is this number + 1 
+        rank = n_exceeding + 1
+        probability = (rank - alpha) / float(n_positions + 1 - 2*alpha)
         return pd.Series(probability, index = df.index)
     else:
         raise ValueError('Wrong type of input')
 
-def prepare_full_set(predictand_name, ndaythreshold: int, leadtimepool: Union[list[int],int] = 15) -> tuple[pd.DataFrame,pd.Series,pd.Series]:
+def prepare_full_set(predictand_name, ndaythreshold: int, predictand_cluster: int = 9 , leadtimepool: Union[list[int],int] = 15) -> tuple[pd.DataFrame,pd.Series,pd.Series]:
     """
     Prepares predictors and predictand
     Currently uses very simple block-mean ensemble predictors
@@ -126,18 +141,27 @@ def prepare_full_set(predictand_name, ndaythreshold: int, leadtimepool: Union[li
     returns (empirical + dynamical predictors, dynamical forecasts of predictand, observed predictand value)
     """
     simple_dynamical_set = pd.DataFrame({'booksname':[
-        'books_paper3-3-simple_swvl4-anom_JJA_45r1_7D-roll-mean_1-swvl-simple-mean.csv',
-        'books_paper3-3-simple_swvl13-anom_JJA_45r1_7D-roll-mean_1-swvl-simple-mean.csv',
-        'books_paper3-3-simple_z-anom_JJA_45r1_7D-roll-mean_1-swvl-simple-mean.csv',
-        'books_paper3-3-simple_sst-anom_JJA_45r1_7D-roll-mean_1-sst-simple-mean.csv',
+        'books_paper3-3-simple_swvl4-anom_JJA_45r1_21D-roll-mean_1-swvl-simple-mean.csv',
+        'books_paper3-3-simple_swvl13-anom_JJA_45r1_21D-roll-mean_1-swvl-simple-mean.csv',
+        'books_paper3-3-simple_z-anom_JJA_45r1_21D-roll-mean_1-swvl-simple-mean.csv',
+        'books_paper3-3-simple_sst-anom_JJA_45r1_21D-roll-mean_1-sst-simple-mean.csv',
+        'books_paper3-4-regimes_z-anom_JJA_45r1_21D-frequency_ids.csv',
         ],
-        'timeagg':[7,7,7,7],
-        'metric':['mean','mean','mean','mean'],
-        }, index = ['swvl4','swvl13','z','sst'])
+        'readfunc':[
+        read_raw_predictor_ensmean,
+        read_raw_predictor_ensmean,
+        read_raw_predictor_ensmean,
+        read_raw_predictor_ensmean,
+        read_raw_predictor_regimes,
+        ],
+        'timeagg':[21,21,21,21,21],
+        'metric':['mean','mean','mean','mean','freq'],
+        }, index = ['swvl4','swvl13','z','sst','z-reg'])
 
     dynamical_predictors = [] 
     for var in simple_dynamical_set.index:
-        predictor = read_raw_predictor_ensmean(
+        readfunc = simple_dynamical_set.loc[var,'readfunc']
+        predictor = readfunc(
                 booksname = simple_dynamical_set.loc[var,'booksname'], 
                 clustid = slice(None),
                 separation = leadtimepool)
@@ -146,7 +170,7 @@ def prepare_full_set(predictand_name, ndaythreshold: int, leadtimepool: Union[li
                 timeagg = simple_dynamical_set.loc[var,'timeagg'],
                 metric = simple_dynamical_set.loc[var,'metric'])
         dynamical_predictors.append(predictor)
-    dynamical_predictors = pd.concat(dynamical_predictors, axis = 1)
+    dynamical_predictors = pd.concat(dynamical_predictors, join = 'inner', axis = 1)
 
     # Now comes the selection and potential duplication of empirical data
     empiricalfile = '/nobackup_1/users/straaten/clusters_cv_spearmanpar_varalpha_strict/precursor.multiagg.parquet'
@@ -164,7 +188,7 @@ def prepare_full_set(predictand_name, ndaythreshold: int, leadtimepool: Union[li
     empirical_set.index = empirical_set.index.droplevel('separation') # A single separation is read so we can drop that and merge to dynamical (could mean suplication)
     empirical_dynamical_set = dynamical_predictors.join(empirical_set, on = 'time', how = 'inner')
 
-    observations, forecast = read_raw_predictand(predictand_name, 9, leadtimepool, True)
+    observations, forecast = read_raw_predictand(booksname = predictand_name, clustid = predictand_cluster, separation = leadtimepool, dynamic_prediction_too = True)
     observations = binarize_hotday_predictand(observations, ndaythreshold = ndaythreshold)
     predicted_predictand = binarize_hotday_predictand(forecast, ndaythreshold = ndaythreshold) 
 
@@ -400,19 +424,20 @@ def twoclass_logistic_regression_coefficients(binary_obs: pd.Series, return_regr
 if __name__ == '__main__':
     leadtimepool = [4,5,6,7,8] 
     #leadtimepool = 15
-    targetname = 'books_paper3-2_tg-ex-q0.75-7D_JJA_45r1_1D_15-t2m-q095-adapted-mean.csv'
-    predictors, forc, obs = prepare_full_set(targetname, ndaythreshold = 3, leadtimepool = leadtimepool)
-    obs_test, obs_trainval, g = test_trainval_split(obs, crossval = True)
+    targetname = 'books_paper3-2_tg-ex-q0.75-21D_JJA_45r1_1D_15-t2m-q095-adapted-mean.csv'
+    predictors, forc, obs = prepare_full_set(targetname, ndaythreshold = 3, predictand_cluster = 9, leadtimepool = leadtimepool)
+    #obs_test, obs_trainval, g = test_trainval_split(obs, crossval = True)
+    #regs = read_raw_predictor_regimes(booksname = 'books_paper3-4-regimes_z-anom_JJA_45r1_21D-frequency_ids.csv', clustid = slice(None), separation = slice(None)) 
 
     # Test what a trend variable does. Not a trend in probability
     # So perhaps just global mean surface temperature?
-    if True:
-        trend_path = '/nobackup/users/straaten/predsets/tg_monthly_global_mean_surface_only_trend.nc'
-        trend = xr.open_dataarray(trend_path).to_dataframe()  
-        trend.columns = pd.MultiIndex.from_tuples([('tg-anom',31,0,'mean')], names = predictors.columns.names)
-        predictors = predictors.join(trend, how = 'inner')
-    jfilter, jmeasure = filter_predictor_set(predictors, obs, return_measures = True, nmost_important = 3)
-    pfilter, pmeasure = filter_predictor_set(predictors, obs, how = perkins, return_measures = True, nmost_important = 3)
+#    if True:
+#        trend_path = '/nobackup/users/straaten/predsets/tg_monthly_global_mean_surface_only_trend.nc'
+#        trend = xr.open_dataarray(trend_path).to_dataframe()  
+#        trend.columns = pd.MultiIndex.from_tuples([('tg-anom',31,0,'mean')], names = predictors.columns.names)
+#        predictors = predictors.join(trend, how = 'inner')
+#    jfilter, jmeasure = filter_predictor_set(predictors, obs, return_measures = True, nmost_important = 3)
+#    pfilter, pmeasure = filter_predictor_set(predictors, obs, how = perkins, return_measures = True, nmost_important = 3)
     #obs, forc = read_raw_predictand(name, 9, leadtimepool, True)
     #name = 'books_paper3-3-simple_swvl4-anom_JJA_45r1_7D-roll-mean_1-swvl-simple-mean.csv'
     #predictor = read_raw_predictor_ensmean(name, slice(None), leadtimepool) 
