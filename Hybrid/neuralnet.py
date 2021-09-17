@@ -84,7 +84,7 @@ def construct_climdev_model(n_classes: int, n_hidden_layers: int, n_features: in
     initializer = tf.keras.initializers.Zeros() # initialization of weights should be optimal for the activation function
     x = feature_input
     for i in range(n_hidden_layers):
-        x = tf.keras.layers.Dense(units = n_features, activation='elu', kernel_initializer = initializer)(x)
+        x = tf.keras.layers.Dense(units = 5, activation='elu', kernel_initializer = initializer)(x) # was units = n_features, but not logical to scale with predictors. 10 is choice in Scheuerer 2020 (with 20 outputs)
     x = tf.keras.layers.Dense(units = n_classes, activation='elu', kernel_initializer = initializer)(x)
     
     log_p_clim = ClimLogProbLayer(n_out_expected = n_classes,**climprobkwargs)(time_input)
@@ -105,7 +105,7 @@ def construct_modeldev_model(n_classes: int, n_hidden_layers: int, n_features: i
     initializer = tf.keras.initializers.Zeros()
     x = feature_input
     for i in range(n_hidden_layers):
-        x = tf.keras.layers.Dense(units = n_features, activation='elu', kernel_initializer = initializer)(x)
+        x = tf.keras.layers.Dense(units = 5, activation='elu', kernel_initializer = initializer)(x) # was units = n_features, but not logical to scale with predictors. 10 is choice in Scheuerer 2020 (with 20 outputs)
     x = tf.keras.layers.Dense(units = n_classes, activation='elu', kernel_initializer = initializer)(x)
     
     pre_activation = tf.keras.layers.Add()([log_p_raw, x])

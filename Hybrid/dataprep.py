@@ -109,40 +109,63 @@ def read_empirical_predictors(filepath: str, separation: int, timeagg: Union[int
     df = df[4].loc[:,(slice(None),timeagg, separation)] # fold level will drop out
     return df.stack('separation')
 
-def binarize_hotday_predictand(df: Union[pd.Series, pd.DataFrame], ndaythreshold: int) -> pd.Series:
+def categorize_hotday_predictand(df: Union[pd.Series, pd.DataFrame], lower_split_bounds: list[int]) -> tuple[pd.Series, pd.DataFrame]:
     """
-    Currently assumes it is the hotdays predictand
-    For observations (pd.Series) it computes greater or equal than the ndaythreshold
-    for forecasts it computes the probability (frequency of members) with greater or equal than the threshold 
+    Lower bounds in days. E.g. [4,8,14] leads to four groups
+    0>=x<4,4>=x<8,8>=x<13,14>=x<=x.max()
+    Returns a series with the number of the category it falls in
+    and a DataFrame of bounds
+    Note that the Tukey plotting position is does properly sum up to 1 for two categories.
     To avoid probabilities of 0 (problems with logarithm) and simultaneously also of 1,
     we do have the option to do (m - a) / (M + 1 - 2a)
     where m is the rank of the observation in that set (positions 1 to 12)
     and where M is the number of positions (12) which is n_members + 1
     We choose to do Tukey plotting position (a = 1/3)
     """
+    lower_split_bounds = np.array([0] + lower_split_bounds)
+    lower_split_bounds.sort()
+    bounds = pd.DataFrame({'low_inclusive':lower_split_bounds,'up_exclusive':lower_split_bounds[1:].tolist() + [np.inf]}, index = pd.RangeIndex(len(lower_split_bounds), name = 'categoryid'))
+
+    vals = np.digitize(df, lower_split_bounds, right = False) - 1 # -1 such that indices equal categoryids
     if isinstance(df, pd.Series):
-        return df >= ndaythreshold
+        return pd.Series(vals, index = df.index), bounds
     elif isinstance(df, pd.DataFrame):
+        returns = pd.DataFrame(np.nan, index = df.index, columns = bounds.index)
         alpha = 1/3 
         n_positions = df.shape[-1] + 1
-        greater_equal =  df.values >= ndaythreshold # 2D array (samples, members)
-        n_exceeding = greater_equal.sum(axis = 1) # the rank of the threshold is this number + 1 
-        rank = n_exceeding + 1
-        probability = (rank - alpha) / float(n_positions + 1 - 2*alpha)
-        return pd.Series(probability, index = df.index)
+        for categoryid in bounds.index:
+            n_present = (vals == categoryid).sum(axis = 1)
+            rank = n_present + 1
+            probability = (rank - alpha) / float(n_positions + 1 - 2*alpha)
+            returns.loc[:,categoryid] = probability
+        return returns, bounds
     else:
         raise ValueError('Wrong type of input')
 
-def prepare_full_set(predictand_name, ndaythreshold: int, predictand_cluster: int = 9 , leadtimepool: Union[list[int],int] = 15) -> tuple[pd.DataFrame,pd.Series,pd.Series]:
+def binarize_hotday_predictand(df: Union[pd.Series, pd.DataFrame], ndaythreshold: int) -> pd.Series:
+    """
+    For observations (pd.Series) it computes greater or equal than the ndaythreshold
+    for forecasts it computes the probability (frequency of members) with greater or equal than the threshold (Tukey)
+    """
+    classprob, bounds = categorize_hotday_predictand(df, lower_split_bounds = [ndaythreshold]) # LAst class will be the desired one
+    if isinstance(df, pd.Series):
+        return classprob == bounds.index[-1] 
+    elif isinstance(df, pd.DataFrame):
+        return classprob.iloc[:,-1]
+    else:
+        raise ValueError('Wrong type of input')
+
+def prepare_full_set(predictand_name, ndaythreshold: Union[list[int],int], predictand_cluster: int = 9 , leadtimepool: Union[list[int],int] = 15) -> tuple[pd.DataFrame,pd.Series,pd.Series]:
     """
     Prepares predictors and predictand
     Currently uses very simple block-mean ensemble predictors
     leadtimepool is in days of absolute separation (1 means 1 full day between issuing of forecast and start of the event)
     returns (empirical + dynamical predictors, dynamical forecasts of predictand, observed predictand value)
+    Multiple ndaythresholds leads to multiclass predictions
     """
     simple_dynamical_set = pd.DataFrame({'booksname':[
         'books_paper3-3-simple_swvl4-anom_JJA_45r1_21D-roll-mean_1-swvl-simple-mean.csv',
-        'books_paper3-3-simple_swvl13-anom_JJA_45r1_21D-roll-mean_1-swvl-simple-mean.csv',
+        'books_paper3-3-simple_swvl13-anom_JJA_45r1_14D-roll-mean_1-swvl-simple-mean.csv',
         'books_paper3-3-simple_z-anom_JJA_45r1_21D-roll-mean_1-swvl-simple-mean.csv',
         'books_paper3-3-simple_sst-anom_JJA_45r1_21D-roll-mean_1-sst-simple-mean.csv',
         'books_paper3-4-regimes_z-anom_JJA_45r1_21D-frequency_ids.csv',
@@ -154,7 +177,7 @@ def prepare_full_set(predictand_name, ndaythreshold: int, predictand_cluster: in
         read_raw_predictor_ensmean,
         read_raw_predictor_regimes,
         ],
-        'timeagg':[21,21,21,21,21],
+        'timeagg':[21,14,21,21,21],
         'metric':['mean','mean','mean','mean','freq'],
         }, index = ['swvl4','swvl13','z','sst','z-reg'])
 
@@ -189,8 +212,15 @@ def prepare_full_set(predictand_name, ndaythreshold: int, predictand_cluster: in
     empirical_dynamical_set = dynamical_predictors.join(empirical_set, on = 'time', how = 'inner')
 
     observations, forecast = read_raw_predictand(booksname = predictand_name, clustid = predictand_cluster, separation = leadtimepool, dynamic_prediction_too = True)
-    observations = binarize_hotday_predictand(observations, ndaythreshold = ndaythreshold)
-    predicted_predictand = binarize_hotday_predictand(forecast, ndaythreshold = ndaythreshold) 
+    if isinstance(ndaythreshold, int):
+        print(f'Binarized target: n_hotdays >= {ndaythreshold}, onehot-encoded')
+        ndaythreshold = [ndaythreshold]
+
+    else:
+        print(f'Multiclass target: n_hotdays >= {ndaythreshold}, onehot-encoded')
+    observations, bounds = categorize_hotday_predictand(observations,  lower_split_bounds = ndaythreshold)
+    predicted_predictand, bounds = categorize_hotday_predictand(forecast,  lower_split_bounds = ndaythreshold)
+    observations = pd.DataFrame(one_hot_encoding(observations), index = observations.index, columns = bounds.index)
 
     # Getting the lengths equal
     index_intersection = empirical_dynamical_set.index.intersection(predicted_predictand.index).intersection(observations.index).sort_values()
@@ -420,12 +450,37 @@ def twoclass_logistic_regression_coefficients(binary_obs: pd.Series, return_regr
     else:
         return climprobkwargs, scaled_input, time_scaler 
 
-
+def multiclass_logistic_regression_coefficients(onehot_obs: pd.DataFrame) -> tuple[dict,np.ndarray,MinMaxScaler]:
+    """
+    Generates the coefficients for the neural network 
+    predicting deviations from the (Logistic) climatological trend in the binary predictand
+    Time (julian-day) is the only input (index of the binary obs), but needs to be min-max scaled. So fitted scaler is returned too
+    Can happen on all data (train + validation)
+    returns a prepared dictionary with coeficient and intercept arrays (2,) with the positive class last
+    also returns the scaler
+    """
+    scaled_input, time_scaler = scale_time(onehot_obs)
+    nclasses = onehot_obs.shape[-1]
+    coefs = np.repeat(np.nan, nclasses)
+    intercepts = np.repeat(np.nan, nclasses)
+    for i in range(nclasses): # Loop over the categories
+        lr = LogisticRegression() # Create and fit the regressor
+        lr.fit(X = scaled_input, y = onehot_obs.iloc[:,i])
+        coefs[i] = lr.coef_[0,[0]]
+        intercepts[i] = lr.intercept_
+    climprobkwargs = dict(coefs = coefs, intercepts = intercepts)
+    return climprobkwargs, scaled_input, time_scaler 
+        
 if __name__ == '__main__':
     leadtimepool = [4,5,6,7,8] 
     #leadtimepool = 15
     targetname = 'books_paper3-2_tg-ex-q0.75-21D_JJA_45r1_1D_15-t2m-q095-adapted-mean.csv'
-    predictors, forc, obs = prepare_full_set(targetname, ndaythreshold = 3, predictand_cluster = 9, leadtimepool = leadtimepool)
+    observations, forecast = read_raw_predictand(booksname = targetname, clustid = 9, separation = leadtimepool, dynamic_prediction_too = True)
+    bins = binarize_hotday_predictand(observations, 6)
+    cats, bounds = categorize_hotday_predictand(observations, [3,6])
+    onehot_obs = pd.DataFrame(one_hot_encoding(cats), index = cats.index, columns = bounds.index)
+    
+    #predictors, forc, obs = prepare_full_set(targetname, ndaythreshold = 3, predictand_cluster = 9, leadtimepool = leadtimepool)
     #obs_test, obs_trainval, g = test_trainval_split(obs, crossval = True)
     #regs = read_raw_predictor_regimes(booksname = 'books_paper3-4-regimes_z-anom_JJA_45r1_21D-frequency_ids.csv', clustid = slice(None), separation = slice(None)) 
 
