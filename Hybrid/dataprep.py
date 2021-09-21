@@ -384,20 +384,18 @@ def one_hot_encoding(categorical_obs: Union[pd.Series, np.ndarray]) -> np.ndarra
         warnings.warn(f'Only one class {classes} found for the one_hot encoding. Can be due to small sample size, otherwise check the data')
     return tf.one_hot(categorical_obs, depth = max(2,nclasses)).numpy()
 
-def twoclass_log_forecastprob(prob_positive: Union[np.ndarray, pd.Series]) -> np.ndarray:
+def multiclass_log_forecastprob(probs: Union[np.ndarray, pd.DataFrame]) -> np.ndarray:
     """
-    Generates logarithms of probabilities for the negative class
-    and the positive class of a binary predictand.
+    Generates logarithms of probabilities for the present classes
     These are required input for the Neural network 
     predicting deviations from the raw dynamic forecast probability.
-    Returns array (nsamples, [logprob_negative, logprob_positive])
+    Returns array (nsamples, [logprob_firstclass,..., logprob_lastclass])
     So positive class last
     """
-    if isinstance(prob_positive, pd.Series):
-        prob_positive = prob_positive.values
-    log_prob_positive = np.log(prob_positive)
-    log_prob_negative = np.log(1 - prob_positive)
-    return np.concatenate([log_prob_negative[:,np.newaxis], log_prob_positive[:,np.newaxis]], axis = 1)
+    assert (len(probs.shape) == 2) and (probs.shape[-1] > 1), 'probabilities of multiple classes should already be present'
+    if isinstance(probs, pd.DataFrame):
+        probs = probs.values
+    return np.log(probs) 
 
 def scale_time(df: Union[pd.Series,pd.DataFrame], fitted_scaler: MinMaxScaler = None) -> tuple[np.ndarray,MinMaxScaler]:
     """

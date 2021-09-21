@@ -120,4 +120,4 @@ earlystop = tf.keras.callbacks.EarlyStopping(
         verbose=1, mode='auto', restore_best_weights=True) 
 reducelr = tf.keras.callbacks.ReduceLROnPlateau(
         monitor='val_loss', factor=0.1, patience=5, verbose=1,
-        mode='auto', min_delta=0.0001, cooldown=0, min_lr=0)
+        mode='auto', min_delta=0.0001, cooldown=0, min_lr=1e-6)
