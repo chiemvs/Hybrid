@@ -11,17 +11,19 @@ Also objective selection should be here
 class BrierScore(tf.keras.metrics.Metric):
     """
     Accumulates the quadratic distance (p_i - o_i)**2 across batches
-    IMPORTANT: assumes that the model predictions are two-class arrays (None, 2) 
-    of which the last one is the positive class (just like the one hot encoded y_true)
+    IMPORTANT: assumes that the model predictions are multi-class arrays (None, classes) 
+    of which the last one [:,-1] is the positive class (just like the one hot encoded y_true)
+    But another class-index can also be supplied 
     """
-    def __init__(self, name = 'brier', **kwargs):
+    def __init__(self, name = 'brier', class_index = -1, **kwargs):
         super(BrierScore, self).__init__(name = name, **kwargs)
         self.total = self.add_weight(name="quadratic_accumulate", initializer="zeros")
         self.count = self.add_weight(name="count", initializer="zeros")
+        self.class_index = class_index
 
     def update_state(self, y_true, y_pred, sample_weight = None):
-        y_true = tf.cast(y_true[:,-1], 'float32')
-        y_pred = tf.cast(y_pred[:,-1], 'float32')
+        y_true = tf.cast(y_true[:,self.class_index], 'float32')
+        y_pred = tf.cast(y_pred[:,self.class_index], 'float32')
         quadr_dist = tf.math.squared_difference(y_pred, y_true) # Take the last predicted class
         self.total.assign_add(tf.reduce_sum(quadr_dist))
         self.count.assign_add(tf.cast(tf.size(y_true),'float32'))

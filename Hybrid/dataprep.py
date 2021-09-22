@@ -73,13 +73,16 @@ def read_raw_predictor_ensmean(booksname: str, clustid: Union[int,slice,list[int
     ensmean = df['forecast'].mean(axis = 1)
     return ensmean.unstack('clustid') # clustid into the columns (different predictors)
 
-def read_raw_predictor_regimes(booksname: str, clustid: Union[int,slice,list[int]], separation: Union[int,slice,list[int]]) -> pd.DataFrame:
+def read_raw_predictor_regimes(booksname: str, clustid: Union[int,slice,list[int]], separation: Union[int,slice,list[int]], observation_too: bool = False) -> pd.DataFrame:
     """
     Loading of the forecast from a matched regime set
     """
     df = read_dynamic_data(booksname = booksname, separation = separation, clustids = clustid)
     df.columns = df.columns.droplevel('number')
-    return df['forecast'].unstack('clustid')
+    if observation_too:
+        return df['forecast'].unstack('clustid'), df['observation'].unstack('clustid')
+    else:
+        return df['forecast'].unstack('clustid')
 
 def annotate_raw_predictor(predictor: pd.DataFrame, variable: str, timeagg: int, metric: str = 'mean') -> pd.DataFrame:
     """
@@ -426,27 +429,19 @@ def scale_other_features(df: pd.DataFrame, fitted_scaler: MinMaxScaler = None) -
         scaled_input = fitted_scaler.transform(df)
     return scaled_input, fitted_scaler
 
-def twoclass_logistic_regression_coefficients(binary_obs: pd.Series, return_regressor: bool = False) -> tuple[dict,np.ndarray,MinMaxScaler]:
+def singleclass_regression(binary_obs: pd.Series, regressor = LogisticRegression) -> tuple[dict,np.ndarray,MinMaxScaler]:
     """
-    Generates the coefficients for the neural network 
-    predicting deviations from the (Logistic) climatological trend in the binary predictand
+    Singleclass benchmark, returning the input, scaler, and regressor
     Time (julian-day) is the only input (index of the binary obs), but needs to be min-max scaled. So fitted scaler is returned too
     Can happen on all data (train + validation)
-    returns a prepared dictionary with coeficient and intercept arrays (2,) with the positive class last
-    also returns the scaler
     """
     scaled_input, time_scaler = scale_time(binary_obs)
     # Create and fit the regressor
-    lr = LogisticRegression()
+    lr = regressor() # Initialize
     lr.fit(X = scaled_input, y = binary_obs.values)
-
-    neg_pos_coef = np.concatenate((-lr.coef_[0,[0]],lr.coef_[0,[0]])) # first negative class, then positive class
-    neg_pos_intercept = np.concatenate((-lr.intercept_,lr.intercept_)) 
-    climprobkwargs = dict(coefs = neg_pos_coef, intercepts= neg_pos_intercept)
-    if return_regressor:
-        return climprobkwargs, scaled_input, time_scaler, lr
-    else:
-        return climprobkwargs, scaled_input, time_scaler 
+    if isinstance(lr, LogisticRegression):
+        lr.predict = lambda x: lr.predict_proba(x)[:,-1] # Always the positive probabilistic predictions
+    return scaled_input, time_scaler, lr
 
 def multiclass_logistic_regression_coefficients(onehot_obs: pd.DataFrame) -> tuple[dict,np.ndarray,MinMaxScaler]:
     """
@@ -468,15 +463,16 @@ def multiclass_logistic_regression_coefficients(onehot_obs: pd.DataFrame) -> tup
         intercepts[i] = lr.intercept_
     climprobkwargs = dict(coefs = coefs, intercepts = intercepts)
     return climprobkwargs, scaled_input, time_scaler 
-        
+
+
 if __name__ == '__main__':
     leadtimepool = [4,5,6,7,8] 
     #leadtimepool = 15
     targetname = 'books_paper3-2_tg-ex-q0.75-21D_JJA_45r1_1D_15-t2m-q095-adapted-mean.csv'
     observations, forecast = read_raw_predictand(booksname = targetname, clustid = 9, separation = leadtimepool, dynamic_prediction_too = True)
-    bins = binarize_hotday_predictand(observations, 6)
-    cats, bounds = categorize_hotday_predictand(observations, [3,6])
-    onehot_obs = pd.DataFrame(one_hot_encoding(cats), index = cats.index, columns = bounds.index)
+#    regimename = 'books_paper3-4-regimes_z-anom_JJA_45r1_21D-frequency_ids.csv'
+#    regforc, regobs = read_raw_predictor_regimes(booksname = regimename, clustid = slice(None), separation = leadtimepool, observation_too = True)
+#    annotate_raw_predictor(regforc, variable = 'z-reg', timeagg = 21, metric = 'freq')
     
     #predictors, forc, obs = prepare_full_set(targetname, ndaythreshold = 3, predictand_cluster = 9, leadtimepool = leadtimepool)
     #obs_test, obs_trainval, g = test_trainval_split(obs, crossval = True)
