@@ -2,11 +2,8 @@ import numpy as np
 import pandas as pd
 import tensorflow as tf
 
+from typing import Callable
 from sklearn.linear_model import LogisticRegression
-
-"""
-Also objective selection should be here
-"""
 
 class BrierScore(tf.keras.metrics.Metric):
     """
@@ -123,3 +120,18 @@ earlystop = tf.keras.callbacks.EarlyStopping(
 reducelr = tf.keras.callbacks.ReduceLROnPlateau(
         monitor='val_loss', factor=0.1, patience=5, verbose=1,
         mode='auto', min_delta=0.0001, cooldown=0, min_lr=1e-6)
+
+class ConstructorAndCompiler(object):
+    def __init__(self, construct_func: Callable = construct_modeldev_model, construct_kwargs: dict = dict(n_classes = 2, n_hidden_layers = 0, n_features = 10), compile_kwargs: dict = dict(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001))):
+        """
+        construct func is one of the degined above (construct_modeldev_model, construct_climdev_model)
+        Default arguments as an example
+        """
+        self.construct_func = construct_func
+        self.construct_kwargs = construct_kwargs
+        self.compile_kwargs = compile_kwargs
+
+    def fresh_model(self):
+        model = self.construct_func(**self.construct_kwargs)
+        model.compile(loss=preferred_loss, **self.compile_kwargs)
+        return model
