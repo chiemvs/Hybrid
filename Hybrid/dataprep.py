@@ -9,14 +9,16 @@ try:
 except ImportError:
     pass
 
-from typing import Union, Callable
+from typing import Union, Callable, Tuple, List
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.linear_model import LogisticRegression
 
 sys.path.append(os.path.expanduser('~/Documents/Weave/'))
 from Weave.models import map_foldindex_to_groupedorder
 sys.path.append(os.path.expanduser('~/Documents/SubSeas/'))
-from comparison import ForecastToObsAlignment
+from comparison import ForecastToObsAlignment, Comparison
+from observations import Climatology
+from forecasts import ModelClimatology
 
 """
 Preparation of a combined (dynamic and empirical) input output set for any statistical model
@@ -44,7 +46,33 @@ def read_dynamic_data(booksname: str, separation: Union[int,slice,list[int]], cl
     subset = modelinfo.loc[(slice(None),clustids,separation),['forecast','observation']]
     return subset
 
-def read_raw_predictand(booksname: str, clustid: int, separation: Union[int,slice,list[int]], dynamic_prediction_too: bool = False) -> Union[pd.Series,tuple[pd.Series,pd.DataFrame]]:
+def read_tganom_predictand(booksname: str, separation: Union[int,slice,List[int]], clustid: int, climname: str = None, modelclimname: str = None) -> Tuple[pd.Series,pd.Series]:
+    """
+    Functionality from SubSeas to get doy based climatology thresholds (for observation)
+    and doy/leadtime based modelclimatology threshold (for forecast probability) involved in binarization
+    outputs two-class versions, one frame for forecast, one for observation
+    """
+    al = ForecastToObsAlignment('JJA','45r1')
+    al.recollect(booksname = booksname)
+    al.alignedobject['separation'] = al.alignedobject['leadtime'] - 1
+    cl = Climatology('tg-anom', name = climname)
+    cl.localclim()
+    if not modelclimname is None:
+        mcl = ModelClimatology('45r1','tg', **{'name':modelclimname})
+        mcl.local_clim()
+    else:
+        mcl = None
+    comp = Comparison(al, climatology = cl, modelclimatology = mcl)
+    comp.brierscore() # Transforms into exceedences, adds pi (tukey)
+    frame = comp.frame.compute()
+    frame = frame.set_index(['time','clustid','separation']).sort_index()
+    subset = frame.loc[(slice(None),clustid,separation),:]
+    subset.index = subset.index.droplevel('clustid')
+    obs = pd.DataFrame(one_hot_encoding(subset[('observation',0)]), index = subset.index, columns = pd.Index([0,1], name = 'categoryid'))
+    forecast = pd.DataFrame(np.concatenate([1 - subset[['pi']].values, subset[['pi']].values], axis = 1), index = subset.index, columns = pd.Index([0,1], name = 'categoryid')) 
+    return obs, forecast 
+
+def read_raw_predictand(booksname: str, clustid: int, separation: Union[int,slice,list[int]], dynamic_prediction_too: bool = False) -> Union[pd.Series,Tuple[pd.Series,pd.DataFrame]]:
     """
     Currently the 'observation' from a 'matched' set.
     Also possible to read the 'forecast' from this set, then this is returned too
@@ -63,7 +91,7 @@ def read_raw_predictand(booksname: str, clustid: int, separation: Union[int,slic
     else:
         return observation 
 
-def read_raw_predictor_ensmean(booksname: str, clustid: Union[int,slice,list[int]], separation: Union[int,slice,list[int]]) -> pd.DataFrame:
+def read_raw_predictor_ensmean(booksname: str, clustid: Union[int,slice,List[int]], separation: Union[int,slice,List[int]]) -> pd.DataFrame:
     """
     Currently a forecast from a 'matched' set for an 'intermediate variable' like block soil moisture
     Involves some reshaping of the match frame such that the columns multi-index will
@@ -73,7 +101,7 @@ def read_raw_predictor_ensmean(booksname: str, clustid: Union[int,slice,list[int
     ensmean = df['forecast'].mean(axis = 1)
     return ensmean.unstack('clustid') # clustid into the columns (different predictors)
 
-def read_raw_predictor_regimes(booksname: str, clustid: Union[int,slice,list[int]], separation: Union[int,slice,list[int]], observation_too: bool = False) -> pd.DataFrame:
+def read_raw_predictor_regimes(booksname: str, clustid: Union[int,slice,List[int]], separation: Union[int,slice,List[int]], observation_too: bool = False) -> pd.DataFrame:
     """
     Loading of the forecast from a matched regime set
     """
@@ -94,7 +122,7 @@ def annotate_raw_predictor(predictor: pd.DataFrame, variable: str, timeagg: int,
     predictor.columns = pd.MultiIndex.from_product([[variable], [timeagg], predictor.columns, [metric]], names = ['variable','timeagg','clustid','metric']) 
 
 
-def read_empirical_predictors(filepath: str, separation: int, timeagg: Union[int,slice,list[int]] = slice(None)):
+def read_empirical_predictors(filepath: str, separation: int, timeagg: Union[int,slice,List[int]] = slice(None)):
     """
     Bulk read of all empirical predictors (multiple variables and clusters)
     Will be filtered later but optional to already select a subset of timeaggs 
@@ -112,7 +140,7 @@ def read_empirical_predictors(filepath: str, separation: int, timeagg: Union[int
     df = df[4].loc[:,(slice(None),timeagg, separation)] # fold level will drop out
     return df.stack('separation')
 
-def categorize_hotday_predictand(df: Union[pd.Series, pd.DataFrame], lower_split_bounds: list[int]) -> tuple[pd.Series, pd.DataFrame]:
+def categorize_hotday_predictand(df: Union[pd.Series, pd.DataFrame], lower_split_bounds: List[int]) -> Tuple[pd.Series, pd.DataFrame]:
     """
     Lower bounds in days. E.g. [4,8,14] leads to four groups
     0>=x<4,4>=x<8,8>=x<13,14>=x<=x.max()

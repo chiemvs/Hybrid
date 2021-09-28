@@ -1,6 +1,7 @@
 import sys
 import os
 import numpy as np 
+import xarray as xr
 import tensorflow as tf
 import pandas as pd
 
@@ -11,9 +12,9 @@ from sklearn.linear_model import LogisticRegression, LinearRegression
 sys.path.append(os.path.expanduser('~/Documents/Hybrid/'))
 from Hybrid.neuralnet import construct_modeldev_model, construct_climdev_model, reducelr, earlystop, BrierScore, ConstructorAndCompiler
 from Hybrid.optimization import multi_fit_multi_eval
-from Hybrid.dataprep import prepare_full_set, test_trainval_split, filter_predictor_set, read_raw_predictand, multiclass_log_forecastprob, singleclass_regression, multiclass_logistic_regression_coefficients, scale_time, scale_other_features, read_raw_predictor_regimes 
+from Hybrid.dataprep import prepare_full_set, test_trainval_split, filter_predictor_set, read_raw_predictand, read_tganom_predictand, multiclass_log_forecastprob, singleclass_regression, multiclass_logistic_regression_coefficients, scale_time, scale_other_features, read_raw_predictor_regimes 
 
-leadtimepool = list(range(19,22)) # [19,20,21] #list(range(12,16)) #[7,8,9,10,11,12,13] #[10,11,12,13,14,15] #[15,16,17,18,19,20,21] # From the longest leadtimepool is taken
+leadtimepool = list(range(12,16)) #list(range(19,22)) # #list(range(12,16)) #[7,8,9,10,11,12,13] #[10,11,12,13,14,15] #[15,16,17,18,19,20,21] # From the longest leadtimepool is taken
 target_region = 9 
 ndaythreshold = 7 #[3,7] #7 #[4,9] Switch to list for multiclass (n>2) predictions
 focus_class = -1 # Index of the class to be scored and benchmarked through bss
@@ -24,22 +25,40 @@ targetname = 'books_paper3-2_tg-ex-q0.75-21D_JJA_45r1_1D_15-t2m-q095-adapted-mea
 predictors, forc, obs = prepare_full_set(targetname, ndaythreshold = ndaythreshold, predictand_cluster = target_region, leadtimepool = leadtimepool)
 
 """
+Predictand replacement with tg-anom
+Quite involved because thresholds need to be matched
+"""
+tganom_name = 'books_paper3-1_tg-anom_JJA_45r1_31D-roll-mean_15-t2m-q095-adapted-mean.csv'
+climname = 'tg-anom_clim_1998-06-07_2019-10-31_31D-roll-mean_15-t2m-q095-adapted-mean_5_5_q0.75'
+modelclimname = 'tg-anom_45r1_1998-06-07_2019-08-31_31D-roll-mean_15-t2m-q095-adapted-mean_5_5_q0.75'
+
+tgobs, tgforc = read_tganom_predictand(booksname = tganom_name, clustid = target_region, separation = leadtimepool, climname = climname, modelclimname = modelclimname) 
+forc, obs = tgforc.loc[forc.index,:], tgobs.loc[forc.index,:]
+
+
+"""
 Predictand replacement with regimes
 """
 #regimename = 'books_paper3-4-regimes_z-anom_JJA_45r1_21D-frequency_ids.csv'
 #regforc, regobs = read_raw_predictor_regimes(booksname = regimename, clustid = slice(None), separation = leadtimepool, observation_too = True)
 #forc, obs = regforc.loc[forc.index,:], regobs.loc[forc.index,:]
 
-X_test, X_trainval, generator = test_trainval_split(predictors, crossval = True, nfolds = 10)
-forc_test, forc_trainval, generator = test_trainval_split(forc, crossval = True, nfolds = 10)
-obs_test, obs_trainval, generator = test_trainval_split(obs, crossval = True, nfolds = 10)
+"""
+Cross validation
+"""
+X_test, X_trainval, generator = test_trainval_split(predictors, crossval = True, nfolds = 5)
+forc_test, forc_trainval, generator = test_trainval_split(forc, crossval = True, nfolds = 5)
+obs_test, obs_trainval, generator = test_trainval_split(obs, crossval = True, nfolds = 5)
 # Observation is already onehot encoded. Make a boolean last-class one for the benchmarks and the RF regressor
 obs_trainval_bool = obs_trainval.iloc[:,focus_class].astype(bool)
 
+"""
+Semi-objective predictor selection
+"""
 # limiting X by j_measure
 jfilter = filter_predictor_set(X_trainval, obs_trainval_bool, return_measures = False, nmost_important = 8, nbins=10)
 # Also limiting by using a detrended target 
-continuous_tg_name = 'books_paper3-1_tg-anom_JJA_45r1_14D-roll-mean_15-t2m-q095-adapted-mean.csv'
+continuous_tg_name = 'books_paper3-1_tg-anom_JJA_45r1_31D-roll-mean_15-t2m-q095-adapted-mean.csv'
 continuous_obs = read_raw_predictand(continuous_tg_name, clustid = 9, separation = leadtimepool)
 continuous_obs = continuous_obs.reindex_like(X_trainval)
 # Detrending
@@ -50,8 +69,8 @@ jfilter_det = filter_predictor_set(X_trainval.reindex(continuous_obs.index), det
 
 
 dynamic_cols = X_trainval.loc[:,['swvl4','swvl13','z','sst','z-reg']].columns
-#dynamic_cols = dynamic_cols[~dynamic_cols.get_loc_level(-1, 'clustid')[0]] # Throw away the unclassified regime
-dynamic_cols = dynamic_cols[~dynamic_cols.get_loc_level('z-reg', 'variable')[0]] # Throw away all regimes
+dynamic_cols = dynamic_cols[~dynamic_cols.get_loc_level(-1, 'clustid')[0]] # Throw away the unclassified regime
+#dynamic_cols = dynamic_cols[~dynamic_cols.get_loc_level('z-reg', 'variable')[0]] # Throw away all regimes
 final_trainval = X_trainval.loc[:,jfilter.columns.union(jfilter_det.columns).union(dynamic_cols)]
 #final_trainval = X_trainval.loc[:,jfilter_det.columns.union(dynamic_cols)]
 #final_trainval = X_trainval.loc[:,jfilter.columns.union(dynamic_cols)]
@@ -60,33 +79,31 @@ final_trainval = X_trainval.loc[:,jfilter.columns.union(jfilter_det.columns).uni
 #final_trainval = jfilter_det
 
 """
-Test the climdev keras 
+Preparation of ANN input and a benchmark
 """
-#climprobkwargs, _, _ = multiclass_logistic_regression_coefficients(obs_trainval) # If multiclass will return the coeficients for all 
+climprobkwargs, _, _ = multiclass_logistic_regression_coefficients(obs_trainval) # If multiclass will return the coeficients for all 
 time_input, time_scaler, lr = singleclass_regression(obs_trainval_bool, regressor = LogisticRegression ) # fit a singleclass for the last category, this will be able to form the benchmark 
 #time_input, time_scaler, lr = singleclass_regression(obs_trainval_bool, regressor = LinearRegression) # fit a singleclass for the last category, this will be able to form the benchmark 
 feature_input, feature_scaler = scale_other_features(final_trainval)
 obs_input = obs_trainval.copy().values
 
-#results = pd.DataFrame(np.nan, index = pd.MultiIndex.from_product([generator.groupids, ['train','val']], names = ['fold','part']), columns = ['crossentropy','accuracy','brier'])
+"""
+Test the climdev keras 
+"""
+#construct_kwargs = dict(n_classes = obs_trainval.shape[-1], 
+#        n_hidden_layers= 0, 
+#        n_features = final_trainval.shape[-1],
+#        climprobkwargs = climprobkwargs)
 #
-#for i, (trainind, valind) in enumerate(generator): # Entering the crossvalidation
-#    model = construct_climdev_model(n_classes = obs_trainval.shape[-1], n_hidden_layers= 0, n_features = final_trainval.shape[-1], climprobkwargs=climprobkwargs)
-#    #test = model([feature_input, time_input])
+#compile_kwargs = dict(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001), 
+#        metrics = ['accuracy',BrierScore(class_index = focus_class)])
 #
-#    model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001), #0.001 for no hidden layer and elu
-#                loss=preferred_loss, #tf.keras.losses.CategoricalCrossentropy(from_logits=False),
-#                metrics=['accuracy',BrierScore(class_index = focus_class)])
-#    history = model.fit(x = [feature_input[trainind,:],time_input[trainind]], 
-#            y = obs_input[trainind,:], 
-#            shuffle=True,
-#            batch_size=32,
-#            epochs=200, 
-#            validation_data=([feature_input[valind,:],time_input[valind]], obs_input[valind,:]),
-#            callbacks=[earlystop])
+#constructor = ConstructorAndCompiler(construct_modeldev_model, construct_kwargs, compile_kwargs)
 #
-#    results.loc[(i,'train'),:] = model.evaluate([feature_input[trainind,:],time_input[trainind]], obs_input[trainind,:])
-#    results.loc[(i,'val'),:] = model.evaluate([feature_input[valind,:],time_input[valind]], obs_input[valind,:])
+#fit_kwargs = dict(batch_size = 32, epochs = 200, callbacks = [earlystop])
+#
+#results = multi_fit_multi_eval(constructor, X_trainval = (feature_input, time_input), y_trainval = obs_input, generator = generator, fit_kwargs = fit_kwargs)
+#results.columns = ['crossentropy','accuracy','brier'] # coould potentially also be inside the multi_eval, but difficult to get names from the mixture of strings and other
 #
 #generator.reset()
 
@@ -145,8 +162,8 @@ Test RF Hybrid model only empirical info and dynamical info of the intermediate 
 
 """
 Benchmarks
-(Logistic) regression is fitted on all train/validation data, had its predict method rewritten
-And fitted to the single focus class
+(Logistic) regression was fitted on all train/validation data, and to the single focus class
+Revised predict method is called here
 """
 benchmarks = pd.DataFrame(np.nan, index = pd.MultiIndex.from_product([generator.groupids, ['val'], ['raw','trend']], names = ['fold','part','reference']), columns = ['brier'])
 for i, (trainind, valind) in enumerate(generator): # Entering the crossvalidation
