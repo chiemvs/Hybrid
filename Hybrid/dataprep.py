@@ -328,8 +328,8 @@ def test_trainval_split(df: Union[pd.Series, pd.DataFrame], crossval: bool = Fal
         years = trainvalset.index.get_level_values('time').year
         unique_years = years.unique()
         assert nfolds <= len(unique_years), 'More folds than unique years requested. Unable to split_on_year.'
-        groupsize = int(np.ceil(len(unique_years) / nfolds)) # Maximum even groupsize, except for the last fold, if unevenly divisible then last fold gets only the remainder.
-        groups = (years - years.min()).map(lambda year: year // groupsize)  
+        groupsize = int(np.floor(len(unique_years) / nfolds)) # Maximum even groupsize, except for the last fold, if unevenly divisible then last fold gets groupsize + the remainder.
+        groups = (years - years.min()).map(lambda year: min(year // groupsize, nfolds-1))  
         assert len(groups.unique()) == nfolds
         generator = GroupedGenerator(groups = groups.values)
 

@@ -80,7 +80,8 @@ def construct_climdev_model(n_classes: int, n_hidden_layers: int, n_features: in
     assert n_classes >= 2, 'Also for the binary case we use two output classes, that are normalized to 1'
     time_input = tf.keras.layers.Input((1,))
     feature_input = tf.keras.layers.Input((n_features,))
-    initializer = tf.keras.initializers.Zeros() # initialization of weights should be optimal for the activation function
+    initializer = tf.keras.initializers.RandomNormal() # initialization of weights should be optimal for the activation function
+    #initializer = tf.keras.initializers.Zeros() # initialization of weights should be optimal for the activation function
     x = feature_input
     for i in range(n_hidden_layers):
         x = tf.keras.layers.Dense(units = 5, activation='elu', kernel_initializer = initializer)(x) # was units = n_features, but not logical to scale with predictors. 10 is choice in Scheuerer 2020 (with 20 outputs)
@@ -114,9 +115,11 @@ def construct_modeldev_model(n_classes: int, n_hidden_layers: int, n_features: i
 
 preferred_loss = tf.keras.losses.CategoricalCrossentropy(from_logits = False) # Under the hood logits are still used, but from cached ._keras_logits from e.g. softmax. Logits are no direct outputs of the model (only logarithms would be possible)
 
-earlystop = tf.keras.callbacks.EarlyStopping(
-        monitor='val_loss', min_delta=0, patience=10,
+def earlystop(patience: int = 10):
+    return tf.keras.callbacks.EarlyStopping(
+        monitor='val_loss', min_delta=0, patience=patience,
         verbose=1, mode='auto', restore_best_weights=True) 
+
 reducelr = tf.keras.callbacks.ReduceLROnPlateau(
         monitor='val_loss', factor=0.1, patience=5, verbose=1,
         mode='auto', min_delta=0.0001, cooldown=0, min_lr=1e-6)

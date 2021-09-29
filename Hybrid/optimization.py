@@ -12,7 +12,7 @@ The place with functionality for
 - hyperparameter optimization
 which will be arranged in scripts
 """
-def ranked_prob_skill(forecasts : np.ndarray, observations: np.ndarray, weights: np.ndarray = None):
+def ranked_prob_score(forecasts : np.ndarray, observations: np.ndarray, weights: np.ndarray = None):
     """
     Both arrays should be (n_samples, n_classes). For deterministic observations
     the array is one-hot encoded. For fuzzy (probabilistic observations)
@@ -24,7 +24,7 @@ def ranked_prob_skill(forecasts : np.ndarray, observations: np.ndarray, weights:
     rps = np.average(distances_over_classes, axis = 0, weights = weights) # Over samples
     return rps
 
-def multi_fit_single_eval(constructor: ConstructorAndCompiler, X_trainval: list[np.ndarray,np.ndarray], y_trainval: np.ndarray, generator: Union[GroupedGenerator,SingleGenerator], fit_kwargs: dict = dict(batch_size = 32, epochs = 200), score_func: Callable = ranked_prob_skill, return_predictions: bool = False) -> float:
+def multi_fit_single_eval(constructor: ConstructorAndCompiler, X_trainval: list[np.ndarray,np.ndarray], y_trainval: np.ndarray, generator: Union[GroupedGenerator,SingleGenerator], fit_kwargs: dict = dict(batch_size = 32, epochs = 200), score_func: Callable = ranked_prob_score, return_predictions: bool = False) -> float:
     """
     Initialized constructer will supply on demand new freshly inilizated models
     this function fits as many (neural) models as the generator generates train/validation subsets 
