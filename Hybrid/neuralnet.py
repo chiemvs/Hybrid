@@ -70,7 +70,7 @@ class ClimLogProbLayer(tf.keras.layers.Layer):
         return self.activation(tf.math.negative(tf.math.log1p(tf.exp(tf.math.negative(tf.add(tf.matmul(inputs, self.a),self.b))))))
     
  
-def construct_climdev_model(n_classes: int, n_hidden_layers: int, n_features: int, climprobkwargs = {}):
+def construct_climdev_model(n_classes: int, n_hidden_layers: int, n_features: int, climprobkwargs = {}, n_hiddenlayer_nodes: int = 5):
     """
     Creates a two-branch Classifier model (n_classes)
     Branch one (simple) predicts changing climatological probability from time only
@@ -84,7 +84,7 @@ def construct_climdev_model(n_classes: int, n_hidden_layers: int, n_features: in
     #initializer = tf.keras.initializers.Zeros() # initialization of weights should be optimal for the activation function
     x = feature_input
     for i in range(n_hidden_layers):
-        x = tf.keras.layers.Dense(units = 5, activation='elu', kernel_initializer = initializer)(x) # was units = n_features, but not logical to scale with predictors. 10 is choice in Scheuerer 2020 (with 20 outputs)
+        x = tf.keras.layers.Dense(units = n_hiddenlayer_nodes, activation='elu', kernel_initializer = initializer)(x) # was units = n_features, but not logical to scale with predictors. 10 is choice in Scheuerer 2020 (with 20 outputs)
     x = tf.keras.layers.Dense(units = n_classes, activation='elu', kernel_initializer = initializer)(x)
     
     log_p_clim = ClimLogProbLayer(n_out_expected = n_classes,**climprobkwargs)(time_input)
@@ -93,7 +93,7 @@ def construct_climdev_model(n_classes: int, n_hidden_layers: int, n_features: in
     
     return tf.keras.models.Model(inputs = [feature_input, time_input], outputs = prob_dist)
 
-def construct_modeldev_model(n_classes: int, n_hidden_layers: int, n_features: int):
+def construct_modeldev_model(n_classes: int, n_hidden_layers: int, n_features: int, n_hiddenlayer_nodes: int = 5 ):
     """
     Creates a two-branch Classifier model (n_classes)
     Branch one (simple) just passes the (logarithm of) raw model probability per class
@@ -102,10 +102,11 @@ def construct_modeldev_model(n_classes: int, n_hidden_layers: int, n_features: i
     assert n_classes >= 2, 'Also for the binary case we use two output classes, that are normalized to 1'
     log_p_raw = tf.keras.layers.Input((n_classes,)) # negative class should be the first node (in case of binary)
     feature_input = tf.keras.layers.Input((n_features,))
-    initializer = tf.keras.initializers.Zeros()
+    initializer = tf.keras.initializers.RandomNormal() # initialization of weights should be optimal for the activation function
+    #initializer = tf.keras.initializers.Zeros()
     x = feature_input
     for i in range(n_hidden_layers):
-        x = tf.keras.layers.Dense(units = 5, activation='elu', kernel_initializer = initializer)(x) # was units = n_features, but not logical to scale with predictors. 10 is choice in Scheuerer 2020 (with 20 outputs)
+        x = tf.keras.layers.Dense(units = n_hiddenlayer_nodes, activation='elu', kernel_initializer = initializer)(x) # was units = n_features, but not logical to scale with predictors. 10 is choice in Scheuerer 2020 (with 20 outputs)
     x = tf.keras.layers.Dense(units = n_classes, activation='elu', kernel_initializer = initializer)(x)
     
     pre_activation = tf.keras.layers.Add()([log_p_raw, x])

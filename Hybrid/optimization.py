@@ -33,23 +33,25 @@ def multi_fit_single_eval(constructor: ConstructorAndCompiler, X_trainval: list[
     Concatenates the (potential multiclass) predictions of the models and evaluates with a scoring func
     """
     predictions = np.full(y_trainval.shape, np.nan)
+    histories = []
     for trainind, valind in generator: # Entering the crossvalidation
         X_train, X_extra_train = X_trainval[0][trainind,:], X_trainval[-1][trainind,...]
         X_val, X_extra_val = X_trainval[0][valind,:], X_trainval[-1][valind,...]
         y_train = y_trainval[trainind,...]
         y_val = y_trainval[valind,...]
         model = constructor.fresh_model() # With neural nets it is important that we re-initialize
-        model.fit(x = [X_train, X_extra_train], 
+        history = model.fit(x = [X_train, X_extra_train], 
                 y = y_train, 
                 shuffle=True,
                 validation_data=([X_val, X_extra_val], y_val), 
                 **fit_kwargs)
         predictions[valind,...] = model.predict([X_val, X_extra_val])
+        histories.append(history)
     score = score_func(predictions, y_trainval) 
     if return_predictions:
-        return score, predictions
+        return score, histories, predictions
     else:
-        return score
+        return score, histories
 
 def multi_fit_multi_eval(constructor: ConstructorAndCompiler, X_trainval: tuple[np.ndarray,np.ndarray], y_trainval: np.ndarray, generator: Union[GroupedGenerator,SingleGenerator], fit_kwargs: dict = dict(batch_size = 32, epochs = 200)) -> pd.DataFrame:
     """
