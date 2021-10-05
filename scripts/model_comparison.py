@@ -15,11 +15,11 @@ from Hybrid.neuralnet import construct_modeldev_model, construct_climdev_model, 
 from Hybrid.optimization import multi_fit_multi_eval, multi_fit_single_eval, ranked_prob_score
 from Hybrid.dataprep import prepare_full_set, test_trainval_split, filter_predictor_set, read_raw_predictand, read_tganom_predictand, multiclass_log_forecastprob, singleclass_regression, multiclass_logistic_regression_coefficients, scale_time, scale_other_features, read_raw_predictor_regimes 
 
-leadtimepool = list(range(12,16)) #list(range(19,22)) # #list(range(12,16)) #[7,8,9,10,11,12,13] #[10,11,12,13,14,15] #[15,16,17,18,19,20,21] # From the longest leadtimepool is taken
+leadtimepool = list(range(19,22)) # #list(range(12,16)) #[7,8,9,10,11,12,13] #[10,11,12,13,14,15] #[15,16,17,18,19,20,21] # From the longest leadtimepool is taken
 target_region = 9 
 ndaythreshold = 7 #[3,7] #7 #[4,9] Switch to list for multiclass (n>2) predictions
 focus_class = -1 # Index of the class to be scored and benchmarked through bss
-multi_eval = True # Single aggregated score or one per fold
+multi_eval = False # Single aggregated score or one per fold
 nfolds = 3
 #targetname = 'books_paper3-2_tg-ex-q0.75-21D_JJA_45r1_1D_0.01-t2m-grid-mean.csv' 
 #targetname = 'books_paper3-2_tg-ex-q0.75-7D_JJA_45r1_1D_15-t2m-q095-adapted-mean.csv'
@@ -62,7 +62,7 @@ Semi-objective predictor selection
 # limiting X by j_measure
 jfilter = filter_predictor_set(X_trainval, obs_trainval_bool, return_measures = False, nmost_important = 8, nbins=10)
 # Also limiting by using a detrended target 
-continuous_tg_name = 'books_paper3-1_tg-anom_JJA_45r1_31D-roll-mean_15-t2m-q095-adapted-mean.csv'
+continuous_tg_name = 'books_paper3-1_tg-anom_JJA_45r1_14D-roll-mean_15-t2m-q095-adapted-mean.csv'
 continuous_obs = read_raw_predictand(continuous_tg_name, clustid = 9, separation = leadtimepool)
 continuous_obs = continuous_obs.reindex_like(X_trainval)
 # Detrending
@@ -75,7 +75,7 @@ jfilter_det = filter_predictor_set(X_trainval.reindex(continuous_obs.index), det
 dynamic_cols = X_trainval.loc[:,['swvl4','swvl13','z','sst','z-reg']].columns
 dynamic_cols = dynamic_cols[~dynamic_cols.get_loc_level(-1, 'clustid')[0]] # Throw away the unclassified regime
 #dynamic_cols = dynamic_cols[~dynamic_cols.get_loc_level('z-reg', 'variable')[0]] # Throw away all regimes
-#final_trainval = X_trainval.loc[:,jfilter.columns.union(jfilter_det.columns).union(dynamic_cols)]
+final_trainval = X_trainval.loc[:,jfilter.columns.union(jfilter_det.columns).union(dynamic_cols)]
 #final_trainval = X_trainval.loc[:,jfilter_det.columns.union(dynamic_cols)]
 #final_trainval = X_trainval.loc[:,jfilter.columns.union(dynamic_cols)]
 #final_trainval = X_trainval.loc[:,jfilter.columns.union(jfilter_det.columns)]
@@ -193,5 +193,7 @@ if multi_eval:
 else: # RPSS benchmarks
     benchmarkraw = ranked_prob_score(forc_trainval.values, obs_trainval.values)
     benchmarktrend = ranked_prob_score(lr.predict_proba(time_input), obs_trainval.values)
-    print(f'RPSS_raw    RPSS_trend: ')
-    print(f'{np.round(1 - score / benchmarkraw, 3)}       {np.round(1 - score / benchmarktrend, 3)}')
+    print(f'RPS_raw    RPS_trend: ')
+    print(f'{np.round(benchmarkraw, 3)}       {np.round(benchmarktrend, 3)}')
+    #print(f'RPSS_raw    RPSS_trend: ')
+    #print(f'{np.round(1 - score / benchmarkraw, 3)}       {np.round(1 - score / benchmarktrend, 3)}')

@@ -18,9 +18,9 @@ Reading in pre-selected predictor sets
 and preconstructed targets
 """
 savedir = Path('/nobackup/users/straaten/predsets/preselected/')
-#savename = 'tg-ex-q0.75-21D_ge7D_sep19-21'
+savename = 'tg-ex-q0.75-21D_ge7D_sep19-21_single'
 #savename = 'tg-ex-q0.75-21D_ge7D_sep12-15' 
-savename = 'tg-anom_JJA_45r1_31D-roll-mean_sep12-15' 
+#savename = 'tg-anom_JJA_45r1_31D-roll-mean_sep19-21' 
 predictors = pd.read_hdf(savedir / f'{savename}_predictors.h5', key = 'input')
 forc = pd.read_hdf(savedir / f'{savename}_forc.h5', key = 'input')
 obs = pd.read_hdf(savedir / f'{savename}_obs.h5', key = 'target')
@@ -39,13 +39,13 @@ raw_predictions = multiclass_log_forecastprob(forc_trainval)
 Hyperparam optimization
 """
 
-parameters = [sherpa.Continuous(name='lr', range=[0.0001, 0.002]),
+parameters = [sherpa.Continuous(name='lr', range=[0.0003, 0.002]),
               sherpa.Discrete(name='earlystop_patience', range=[5, 20]),
               sherpa.Ordinal(name='batch_size', range=[16, 32, 64]),
-              sherpa.Discrete(name='n_hidden_layers', range=[1,3]),
+              sherpa.Discrete(name='n_hidden_layers', range=[1,4]),
               sherpa.Discrete(name='n_hiddenlayer_nodes', range=[4,10])] #sherpa.Choice(name='activation', range=['relu', 'elu'])
 
-algorithm = sherpa.algorithms.RandomSearch(max_num_trials=150)
+algorithm = sherpa.algorithms.RandomSearch(max_num_trials=200)
 study = sherpa.Study(parameters=parameters,
                      dashboard_port=8888,
                      disable_dashboard=True,

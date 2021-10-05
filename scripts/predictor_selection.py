@@ -12,7 +12,7 @@ from PermutationImportance.sequential_selection import sequential_forward_select
 sys.path.append(os.path.expanduser('~/Documents/Hybrid/'))
 from Hybrid.neuralnet import construct_modeldev_model, construct_climdev_model, earlystop, ConstructorAndCompiler
 from Hybrid.dataprep import test_trainval_split, multiclass_logistic_regression_coefficients, scale_other_features, multiclass_log_forecastprob, GroupedGenerator
-from Hybrid.optimization import multi_fit_single_eval, ranked_prob_score
+from Hybrid.optimization import multi_fit_single_eval
 
 
 savedir = Path('/nobackup/users/straaten/predsets/full/')
@@ -21,9 +21,9 @@ predictors = pd.read_hdf(savedir / f'{savename}_predictors.h5', key = 'input')
 forc = pd.read_hdf(savedir / f'{savename}_forc.h5', key = 'input')
 obs = pd.read_hdf(savedir / f'{savename}_obs.h5', key = 'target')
 
-X_test, X_trainval, generator = test_trainval_split(predictors, crossval = True, nfolds = 6)
-forc_test, forc_trainval, generator = test_trainval_split(forc, crossval = True, nfolds = 6)
-obs_test, obs_trainval, generator = test_trainval_split(obs, crossval = True, nfolds = 6)
+X_test, X_trainval, generator = test_trainval_split(predictors, crossval = False, nfolds = 6)
+forc_test, forc_trainval, generator = test_trainval_split(forc, crossval = False, nfolds = 6)
+obs_test, obs_trainval, generator = test_trainval_split(obs, crossval = False, nfolds = 6)
 
 
 climprobkwargs, time_input, time_scaler = multiclass_logistic_regression_coefficients(obs_trainval) # If multiclass will return the coeficients for all 
@@ -57,13 +57,9 @@ def score_model(training_data: Tuple[np.ndarray,np.ndarray], scoring_data: tuple
             epochs = 200, 
             callbacks = [earlystop(10)])
 
-    if isinstance(g,GroupedGenerator):
-        score, histories = multi_fit_single_eval(constructor, X_trainval = (feature_trainval, raw_predictions), y_trainval = y_trainval, generator = g, fit_kwargs = fit_kwargs, return_predictions = False) # Scores with RPS
-    else: # for SingleGenerator nans are written in multi_fit_single_eval when doing only one fold. So recompute score on non-nan
-        _ , histories, predictions = multi_fit_single_eval(constructor, X_trainval = (feature_trainval, raw_predictions), y_trainval = y_trainval, generator = g, fit_kwargs = fit_kwargs, return_predictions = True) # Scores with RPS
-        notnan = ~np.isnan(predictions).all(axis = 1)
-        score = ranked_prob_score(predictions[notnan,:], y_trainval[notnan,:])
-    return score #, histories, predictions
+    score, histories = multi_fit_single_eval(constructor, X_trainval = (feature_trainval, raw_predictions), y_trainval = y_trainval, generator = g, fit_kwargs = fit_kwargs, return_predictions = False) # Scores with RPS
+    # for SingleGenerator nans are written in multi_fit_single_eval when doing only one fold. Therefore handled in the single_eval
+    return score
 
 #test2 = score_model((feature_input[:,:10],obs_input))
 

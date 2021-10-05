@@ -47,7 +47,10 @@ def multi_fit_single_eval(constructor: ConstructorAndCompiler, X_trainval: list[
                 **fit_kwargs)
         predictions[valind,...] = model.predict([X_val, X_extra_val])
         histories.append(history)
-    score = score_func(predictions, y_trainval) 
+    if isinstance(generator, SingleGenerator): # Subsetting becaus we do no crossval to make predictions at all datapoints
+        score = score_func(predictions[valind,...], y_trainval[valind,...]) 
+    else:
+        score = score_func(predictions, y_trainval) 
     if return_predictions:
         return score, histories, predictions
     else:
