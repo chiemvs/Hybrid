@@ -32,12 +32,12 @@ predictors, forc, obs = prepare_full_set(targetname, ndaythreshold = ndaythresho
 Predictand replacement with tg-anom
 Quite involved because thresholds need to be matched
 """
-tganom_name = 'books_paper3-1_tg-anom_JJA_45r1_31D-roll-mean_15-t2m-q095-adapted-mean.csv'
-climname = 'tg-anom_clim_1998-06-07_2019-10-31_31D-roll-mean_15-t2m-q095-adapted-mean_5_5_q0.75'
-modelclimname = 'tg-anom_45r1_1998-06-07_2019-08-31_31D-roll-mean_15-t2m-q095-adapted-mean_5_5_q0.75'
-
-tgobs, tgforc = read_tganom_predictand(booksname = tganom_name, clustid = target_region, separation = leadtimepool, climname = climname, modelclimname = modelclimname) 
-forc, obs = tgforc.loc[forc.index,:], tgobs.loc[forc.index,:]
+#tganom_name = 'books_paper3-1_tg-anom_JJA_45r1_31D-roll-mean_15-t2m-q095-adapted-mean.csv'
+#climname = 'tg-anom_clim_1998-06-07_2019-10-31_31D-roll-mean_15-t2m-q095-adapted-mean_5_5_q0.75'
+#modelclimname = 'tg-anom_45r1_1998-06-07_2019-08-31_31D-roll-mean_15-t2m-q095-adapted-mean_5_5_q0.75'
+#
+#tgobs, tgforc = read_tganom_predictand(booksname = tganom_name, clustid = target_region, separation = leadtimepool, climname = climname, modelclimname = modelclimname) 
+#forc, obs = tgforc.loc[forc.index,:], tgobs.loc[forc.index,:]
 
 
 """
@@ -75,17 +75,19 @@ jfilter_det = filter_predictor_set(X_trainval.reindex(continuous_obs.index), det
 dynamic_cols = X_trainval.loc[:,['swvl4','swvl13','z','sst','z-reg']].columns
 dynamic_cols = dynamic_cols[~dynamic_cols.get_loc_level(-1, 'clustid')[0]] # Throw away the unclassified regime
 #dynamic_cols = dynamic_cols[~dynamic_cols.get_loc_level('z-reg', 'variable')[0]] # Throw away all regimes
-final_trainval = X_trainval.loc[:,jfilter.columns.union(jfilter_det.columns).union(dynamic_cols)]
+#final_trainval = X_trainval.loc[:,jfilter.columns.union(jfilter_det.columns).union(dynamic_cols)]
 #final_trainval = X_trainval.loc[:,jfilter_det.columns.union(dynamic_cols)]
 #final_trainval = X_trainval.loc[:,jfilter.columns.union(dynamic_cols)]
 #final_trainval = X_trainval.loc[:,jfilter.columns.union(jfilter_det.columns)]
 #final_trainval = X_trainval.loc[:,dynamic_cols] #jfilter_det
 #final_trainval = jfilter_det
 #final_trainval = X_trainval.drop(dynamic_cols, axis = 1)
+#final_trainval = X_trainval.loc[:,~X_trainval.columns.get_loc_level(-1, 'clustid')[0]] # Throw away the unclassified
 
 """
 Saving for later
 """
+#savedir = Path('/nobackup/users/straaten/predsets/full/')
 #savedir = Path('/nobackup/users/straaten/predsets/preselected/')
 #savename = f'tg-ex-q0.75-21D_ge{ndaythreshold}D_sep{leadtimepool[0]}-{leadtimepool[-1]}'
 ##savename = f'tg-anom_JJA_45r1_31D-roll-mean_sep{leadtimepool[0]}-{leadtimepool[-1]}'
@@ -129,26 +131,26 @@ Test the climdev keras
 """
 Test the modeldev keras
 """
-raw_predictions = multiclass_log_forecastprob(forc_trainval)
-
-construct_kwargs = dict(n_classes = obs_trainval.shape[-1], 
-        n_hidden_layers= 2, 
-        n_features = final_trainval.shape[-1])
-
-compile_kwargs = dict(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001), 
-        metrics = ['accuracy',BrierScore(class_index = focus_class)])
-
-constructor = ConstructorAndCompiler(construct_modeldev_model, construct_kwargs, compile_kwargs)
-
-fit_kwargs = dict(batch_size = 32, epochs = 200, callbacks = [earlystop(10)])
-
-if multi_eval:
-    results = multi_fit_multi_eval(constructor, X_trainval = (feature_input, raw_predictions), y_trainval = obs_input, generator = generator, fit_kwargs = fit_kwargs)
-    results.columns = ['crossentropy','accuracy','brier'] # coould potentially also be inside the multi_eval, but difficult to get names from the mixture of strings and other
-else:
-    score, predictions = multi_fit_single_eval(constructor, X_trainval = (feature_input, raw_predictions), y_trainval = obs_input, generator = generator, fit_kwargs = fit_kwargs, return_predictions = True)
-
-generator.reset()
+#raw_predictions = multiclass_log_forecastprob(forc_trainval)
+#
+#construct_kwargs = dict(n_classes = obs_trainval.shape[-1], 
+#        n_hidden_layers= 2, 
+#        n_features = final_trainval.shape[-1])
+#
+#compile_kwargs = dict(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001), 
+#        metrics = ['accuracy',BrierScore(class_index = focus_class)])
+#
+#constructor = ConstructorAndCompiler(construct_modeldev_model, construct_kwargs, compile_kwargs)
+#
+#fit_kwargs = dict(batch_size = 32, epochs = 200, callbacks = [earlystop(10)])
+#
+#if multi_eval:
+#    results = multi_fit_multi_eval(constructor, X_trainval = (feature_input, raw_predictions), y_trainval = obs_input, generator = generator, fit_kwargs = fit_kwargs)
+#    results.columns = ['crossentropy','accuracy','brier'] # coould potentially also be inside the multi_eval, but difficult to get names from the mixture of strings and other
+#else:
+#    score, predictions = multi_fit_single_eval(constructor, X_trainval = (feature_input, raw_predictions), y_trainval = obs_input, generator = generator, fit_kwargs = fit_kwargs, return_predictions = True)
+#
+#generator.reset()
 
 """
 Test RF Hybrid model only empirical info and dynamical info of the intermediate variables

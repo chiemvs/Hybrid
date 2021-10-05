@@ -9,6 +9,7 @@ try:
 except ImportError:
     pass
 
+from copy import deepcopy
 from typing import Union, Callable, Tuple, List
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.linear_model import LogisticRegression
@@ -284,6 +285,15 @@ class GroupedGenerator(object):
         raise StopIteration()
     def reset(self):
         self.ncalls = 0
+    def __copy__(self):
+        return type(self)(self.groups)
+    def __deepcopy__(self, memo): # based on https://stackoverflow.com/questions/4794244/how-can-i-create-a-copy-of-an-object-in-python
+        id_self = id(self)
+        _copy = memo.get(id_self)
+        if _copy is None:
+            _copy = type(self)(deepcopy(self.groups, memo))
+            memo[id_self] = _copy
+        return _copy
 
 class SingleGenerator(object):
     """ Yields only once the true indices that it has been supplied with and its inverse """
@@ -300,6 +310,15 @@ class SingleGenerator(object):
         raise StopIteration()
     def reset(self):
         self.ncalls = 0
+    def __copy__(self):
+        return type(self)(self.whereval)
+    def __deepcopy__(self, memo): # based on https://stackoverflow.com/questions/4794244/how-can-i-create-a-copy-of-an-object-in-python
+        id_self = id(self)
+        _copy = memo.get(id_self)
+        if _copy is None:
+            _copy = type(self)(deepcopy(self.whereval, memo))
+            memo[id_self] = _copy
+        return _copy
 
 def test_trainval_split(df: Union[pd.Series, pd.DataFrame], crossval: bool = False, nfolds: int = 4) -> tuple[Union[pd.Series, pd.DataFrame],Union[GroupedGenerator,SingleGenerator]]:
     """
