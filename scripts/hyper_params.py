@@ -25,9 +25,9 @@ predictors = pd.read_hdf(savedir / f'{savename}_predictors.h5', key = 'input')
 forc = pd.read_hdf(savedir / f'{savename}_forc.h5', key = 'input')
 obs = pd.read_hdf(savedir / f'{savename}_obs.h5', key = 'target')
 
-X_test, X_trainval, generator = test_trainval_split(predictors, crossval = True, nfolds = 6)
-forc_test, forc_trainval, generator = test_trainval_split(forc, crossval = True, nfolds = 6)
-obs_test, obs_trainval, generator = test_trainval_split(obs, crossval = True, nfolds = 6)
+X_test, X_trainval, generator = test_trainval_split(predictors, crossval = False, nfolds = 6)
+forc_test, forc_trainval, generator = test_trainval_split(forc, crossval = False, nfolds = 6)
+obs_test, obs_trainval, generator = test_trainval_split(obs, crossval = False, nfolds = 6)
 
 
 climprobkwargs, time_input, time_scaler = multiclass_logistic_regression_coefficients(obs_trainval) # If multiclass will return the coeficients for all 
@@ -66,6 +66,7 @@ for trial in study:
 
     fit_kwargs = dict(batch_size = trial.parameters['batch_size'], 
             epochs = 200, 
+            shuffle = True,
             callbacks = [earlystop(trial.parameters['earlystop_patience'])])
 
     # Noisy fitting, so do multiple evalutations, whose mean will converge with more evaluations

@@ -19,8 +19,8 @@ leadtimepool = list(range(19,22)) # #list(range(12,16)) #[7,8,9,10,11,12,13] #[1
 target_region = 9 
 ndaythreshold = 7 #[3,7] #7 #[4,9] Switch to list for multiclass (n>2) predictions
 focus_class = -1 # Index of the class to be scored and benchmarked through bss
-multi_eval = False # Single aggregated score or one per fold
-nfolds = 3
+multi_eval = True # Single aggregated score or one per fold
+nfolds = 6
 #targetname = 'books_paper3-2_tg-ex-q0.75-21D_JJA_45r1_1D_0.01-t2m-grid-mean.csv' 
 #targetname = 'books_paper3-2_tg-ex-q0.75-7D_JJA_45r1_1D_15-t2m-q095-adapted-mean.csv'
 #targetname = 'books_paper3-2_tg-ex-q0.75-14D_JJA_45r1_1D_15-t2m-q095-adapted-mean.csv'
@@ -50,9 +50,9 @@ Predictand replacement with regimes
 """
 Cross validation
 """
-X_test, X_trainval, generator = test_trainval_split(predictors, crossval = True, nfolds = nfolds)
-forc_test, forc_trainval, generator = test_trainval_split(forc, crossval = True, nfolds = nfolds)
-obs_test, obs_trainval, generator = test_trainval_split(obs, crossval = True, nfolds = nfolds)
+X_test, X_trainval, generator = test_trainval_split(predictors, crossval = False, nfolds = nfolds)
+forc_test, forc_trainval, generator = test_trainval_split(forc, crossval = False, nfolds = nfolds)
+obs_test, obs_trainval, generator = test_trainval_split(obs, crossval = False, nfolds = nfolds)
 # Observation is already onehot encoded. Make a boolean last-class one for the benchmarks and the RF regressor
 obs_trainval_bool = obs_trainval.iloc[:,focus_class].astype(bool)
 
@@ -75,11 +75,11 @@ jfilter_det = filter_predictor_set(X_trainval.reindex(continuous_obs.index), det
 dynamic_cols = X_trainval.loc[:,['swvl4','swvl13','z','sst','z-reg']].columns
 dynamic_cols = dynamic_cols[~dynamic_cols.get_loc_level(-1, 'clustid')[0]] # Throw away the unclassified regime
 #dynamic_cols = dynamic_cols[~dynamic_cols.get_loc_level('z-reg', 'variable')[0]] # Throw away all regimes
-final_trainval = X_trainval.loc[:,jfilter.columns.union(jfilter_det.columns).union(dynamic_cols)]
+#final_trainval = X_trainval.loc[:,jfilter.columns.union(jfilter_det.columns).union(dynamic_cols)]
 #final_trainval = X_trainval.loc[:,jfilter_det.columns.union(dynamic_cols)]
 #final_trainval = X_trainval.loc[:,jfilter.columns.union(dynamic_cols)]
 #final_trainval = X_trainval.loc[:,jfilter.columns.union(jfilter_det.columns)]
-#final_trainval = X_trainval.loc[:,dynamic_cols] #jfilter_det
+final_trainval = X_trainval.loc[:,dynamic_cols] #jfilter_det
 #final_trainval = jfilter_det
 #final_trainval = X_trainval.drop(dynamic_cols, axis = 1)
 #final_trainval = X_trainval.loc[:,~X_trainval.columns.get_loc_level(-1, 'clustid')[0]] # Throw away the unclassified
@@ -131,26 +131,27 @@ Test the climdev keras
 """
 Test the modeldev keras
 """
-#raw_predictions = multiclass_log_forecastprob(forc_trainval)
-#
-#construct_kwargs = dict(n_classes = obs_trainval.shape[-1], 
-#        n_hidden_layers= 2, 
-#        n_features = final_trainval.shape[-1])
-#
-#compile_kwargs = dict(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001), 
-#        metrics = ['accuracy',BrierScore(class_index = focus_class)])
-#
-#constructor = ConstructorAndCompiler(construct_modeldev_model, construct_kwargs, compile_kwargs)
-#
-#fit_kwargs = dict(batch_size = 32, epochs = 200, callbacks = [earlystop(10)])
-#
-#if multi_eval:
-#    results = multi_fit_multi_eval(constructor, X_trainval = (feature_input, raw_predictions), y_trainval = obs_input, generator = generator, fit_kwargs = fit_kwargs)
-#    results.columns = ['crossentropy','accuracy','brier'] # coould potentially also be inside the multi_eval, but difficult to get names from the mixture of strings and other
-#else:
-#    score, predictions = multi_fit_single_eval(constructor, X_trainval = (feature_input, raw_predictions), y_trainval = obs_input, generator = generator, fit_kwargs = fit_kwargs, return_predictions = True)
-#
-#generator.reset()
+raw_predictions = multiclass_log_forecastprob(forc_trainval)
+
+construct_kwargs = dict(n_classes = obs_trainval.shape[-1], 
+        n_hidden_layers= 2, 
+        n_features = final_trainval.shape[-1],
+        n_hiddenlayer_nodes = 4)
+
+compile_kwargs = dict(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001), 
+        metrics = ['accuracy',BrierScore(class_index = focus_class)])
+
+constructor = ConstructorAndCompiler(construct_modeldev_model, construct_kwargs, compile_kwargs)
+
+fit_kwargs = dict(batch_size = 32, epochs = 200, shuffle = True, callbacks = [earlystop(10)])
+
+if multi_eval:
+    results = multi_fit_multi_eval(constructor, X_trainval = (feature_input, raw_predictions), y_trainval = obs_input, generator = generator, fit_kwargs = fit_kwargs)
+    results.columns = ['crossentropy','accuracy','brier'] # coould potentially also be inside the multi_eval, but difficult to get names from the mixture of strings and other
+else:
+    score, predictions = multi_fit_single_eval(constructor, X_trainval = (feature_input, raw_predictions), y_trainval = obs_input, generator = generator, fit_kwargs = fit_kwargs, return_predictions = True)
+
+generator.reset()
 
 """
 Test RF Hybrid model only empirical info and dynamical info of the intermediate variables
@@ -180,7 +181,10 @@ Benchmarks
 Revised predict method is called here
 """
 if multi_eval:
-    benchmarks = pd.DataFrame(np.nan, index = pd.MultiIndex.from_product([generator.groupids, ['val'], ['raw','trend']], names = ['fold','part','reference']), columns = ['brier'])
+    if hasattr(generator,'groupids'):
+        benchmarks = pd.DataFrame(np.nan, index = pd.MultiIndex.from_product([generator.groupids, ['val'], ['raw','trend']], names = ['fold','part','reference']), columns = ['brier'])
+    else:
+        benchmarks = pd.DataFrame(np.nan, index = pd.MultiIndex.from_product([[0], ['val'], ['raw','trend']], names = ['fold','part','reference']), columns = ['brier'])
     for i, (trainind, valind) in enumerate(generator): # Entering the crossvalidation
         benchmarks.loc[(i,'val','raw'),:] = np.mean((obs_trainval_bool.iloc[valind] - forc_trainval.iloc[valind,focus_class])**2)
         benchmarks.loc[(i,'val','trend'),:] = np.mean((obs_trainval_bool.iloc[valind] - lr.predict(time_input)[valind])**2)
