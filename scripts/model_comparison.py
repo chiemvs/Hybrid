@@ -15,29 +15,36 @@ from Hybrid.neuralnet import construct_modeldev_model, construct_climdev_model, 
 from Hybrid.optimization import multi_fit_multi_eval, multi_fit_single_eval, ranked_prob_score
 from Hybrid.dataprep import prepare_full_set, test_trainval_split, filter_predictor_set, read_raw_predictand, read_tganom_predictand, multiclass_log_forecastprob, singleclass_regression, multiclass_logistic_regression_coefficients, scale_time, scale_other_features, read_raw_predictor_regimes 
 
-leadtimepool = list(range(19,22)) # #list(range(12,16)) #[7,8,9,10,11,12,13] #[10,11,12,13,14,15] #[15,16,17,18,19,20,21] # From the longest leadtimepool is taken
+leadtimepool = list(range(12,16)) # #list(range(19,22)) #[7,8,9,10,11,12,13] #[10,11,12,13,14,15] #[15,16,17,18,19,20,21] # From the longest leadtimepool is taken
 target_region = 9 
 ndaythreshold = 7 #[3,7] #7 #[4,9] Switch to list for multiclass (n>2) predictions
 focus_class = -1 # Index of the class to be scored and benchmarked through bss
 multi_eval = True # Single aggregated score or one per fold
-nfolds = 6
+preload = True
+crossval = True
+crossval_scaling = True # Wether to do also minmax scaling in cv mode
+nfolds = 3
 #targetname = 'books_paper3-2_tg-ex-q0.75-21D_JJA_45r1_1D_0.01-t2m-grid-mean.csv' 
 #targetname = 'books_paper3-2_tg-ex-q0.75-7D_JJA_45r1_1D_15-t2m-q095-adapted-mean.csv'
 #targetname = 'books_paper3-2_tg-ex-q0.75-14D_JJA_45r1_1D_15-t2m-q095-adapted-mean.csv'
 targetname = 'books_paper3-2_tg-ex-q0.75-21D_JJA_45r1_1D_15-t2m-q095-adapted-mean.csv'
 predictors, forc, obs = prepare_full_set(targetname, ndaythreshold = ndaythreshold, predictand_cluster = target_region, leadtimepool = leadtimepool)
+if preload: # For instance a predictor set coming from 
+    #loadpath = '/nobackup/users/straaten/predsets/objective_cv/tg-ex-q0.75-21D_ge7D_sep19-21_multi_d20_b1_predictors.h5'
+    loadpath = '/nobackup/users/straaten/predsets/objective_cv/tg-ex-q0.75-21D_ge7D_sep12-15_multi_d20_b1_predictors.h5'
+    predictors = pd.read_hdf(loadpath, key = 'input').iloc[:,:3]
 
 
 """
 Predictand replacement with tg-anom
 Quite involved because thresholds need to be matched
 """
-#tganom_name = 'books_paper3-1_tg-anom_JJA_45r1_31D-roll-mean_15-t2m-q095-adapted-mean.csv'
-#climname = 'tg-anom_clim_1998-06-07_2019-10-31_31D-roll-mean_15-t2m-q095-adapted-mean_5_5_q0.75'
-#modelclimname = 'tg-anom_45r1_1998-06-07_2019-08-31_31D-roll-mean_15-t2m-q095-adapted-mean_5_5_q0.75'
-#
-#tgobs, tgforc = read_tganom_predictand(booksname = tganom_name, clustid = target_region, separation = leadtimepool, climname = climname, modelclimname = modelclimname) 
-#forc, obs = tgforc.loc[forc.index,:], tgobs.loc[forc.index,:]
+tganom_name = 'books_paper3-1_tg-anom_JJA_45r1_31D-roll-mean_15-t2m-q095-adapted-mean.csv'
+climname = 'tg-anom_clim_1998-06-07_2019-10-31_31D-roll-mean_15-t2m-q095-adapted-mean_5_5_q0.75'
+modelclimname = 'tg-anom_45r1_1998-06-07_2019-08-31_31D-roll-mean_15-t2m-q095-adapted-mean_5_5_q0.75'
+
+tgobs, tgforc = read_tganom_predictand(booksname = tganom_name, clustid = target_region, separation = leadtimepool, climname = climname, modelclimname = modelclimname) 
+forc, obs = tgforc.loc[forc.index,:], tgobs.loc[forc.index,:]
 
 
 """
@@ -50,50 +57,53 @@ Predictand replacement with regimes
 """
 Cross validation
 """
-X_test, X_trainval, generator = test_trainval_split(predictors, crossval = False, nfolds = nfolds)
-forc_test, forc_trainval, generator = test_trainval_split(forc, crossval = False, nfolds = nfolds)
-obs_test, obs_trainval, generator = test_trainval_split(obs, crossval = False, nfolds = nfolds)
+X_test, X_trainval, generator = test_trainval_split(predictors, crossval = crossval, nfolds = nfolds)
+forc_test, forc_trainval, generator = test_trainval_split(forc, crossval = crossval, nfolds = nfolds)
+obs_test, obs_trainval, generator = test_trainval_split(obs, crossval = crossval, nfolds = nfolds)
 # Observation is already onehot encoded. Make a boolean last-class one for the benchmarks and the RF regressor
 obs_trainval_bool = obs_trainval.iloc[:,focus_class].astype(bool)
 
-"""
-Semi-objective predictor selection
-"""
-# limiting X by j_measure
-jfilter = filter_predictor_set(X_trainval, obs_trainval_bool, return_measures = False, nmost_important = 8, nbins=10)
-# Also limiting by using a detrended target 
-continuous_tg_name = 'books_paper3-1_tg-anom_JJA_45r1_14D-roll-mean_15-t2m-q095-adapted-mean.csv'
-continuous_obs = read_raw_predictand(continuous_tg_name, clustid = 9, separation = leadtimepool)
-continuous_obs = continuous_obs.reindex_like(X_trainval)
-# Detrending
-continuous_obs_detrended = pd.Series(detrend(continuous_obs.values), index = continuous_obs.index)
-detrended_exceedence = continuous_obs_detrended > continuous_obs_detrended.quantile(0.75)
-
-jfilter_det = filter_predictor_set(X_trainval.reindex(continuous_obs.index), detrended_exceedence, return_measures = False, nmost_important = 8, nbins=10)
-
-
-dynamic_cols = X_trainval.loc[:,['swvl4','swvl13','z','sst','z-reg']].columns
-dynamic_cols = dynamic_cols[~dynamic_cols.get_loc_level(-1, 'clustid')[0]] # Throw away the unclassified regime
-#dynamic_cols = dynamic_cols[~dynamic_cols.get_loc_level('z-reg', 'variable')[0]] # Throw away all regimes
-#final_trainval = X_trainval.loc[:,jfilter.columns.union(jfilter_det.columns).union(dynamic_cols)]
-#final_trainval = X_trainval.loc[:,jfilter_det.columns.union(dynamic_cols)]
-#final_trainval = X_trainval.loc[:,jfilter.columns.union(dynamic_cols)]
-#final_trainval = X_trainval.loc[:,jfilter.columns.union(jfilter_det.columns)]
-final_trainval = X_trainval.loc[:,dynamic_cols] #jfilter_det
-#final_trainval = jfilter_det
-#final_trainval = X_trainval.drop(dynamic_cols, axis = 1)
-#final_trainval = X_trainval.loc[:,~X_trainval.columns.get_loc_level(-1, 'clustid')[0]] # Throw away the unclassified
-
-"""
-Saving for later
-"""
-#savedir = Path('/nobackup/users/straaten/predsets/full/')
-#savedir = Path('/nobackup/users/straaten/predsets/preselected/')
-#savename = f'tg-ex-q0.75-21D_ge{ndaythreshold}D_sep{leadtimepool[0]}-{leadtimepool[-1]}'
-##savename = f'tg-anom_JJA_45r1_31D-roll-mean_sep{leadtimepool[0]}-{leadtimepool[-1]}'
-#predictors.loc[:,final_trainval.columns].to_hdf(savedir / f'{savename}_predictors.h5', key = 'input')
-#forc.to_hdf(savedir / f'{savename}_forc.h5', key = 'input')
-#obs.to_hdf(savedir / f'{savename}_obs.h5', key = 'target')
+if not preload:
+    """
+    Semi-objective predictor selection
+    """
+    # limiting X by j_measure
+    jfilter = filter_predictor_set(X_trainval, obs_trainval_bool, return_measures = False, nmost_important = 8, nbins=10)
+    # Also limiting by using a detrended target 
+    continuous_tg_name = 'books_paper3-1_tg-anom_JJA_45r1_14D-roll-mean_15-t2m-q095-adapted-mean.csv'
+    continuous_obs = read_raw_predictand(continuous_tg_name, clustid = 9, separation = leadtimepool)
+    continuous_obs = continuous_obs.reindex_like(X_trainval)
+    # Detrending
+    continuous_obs_detrended = pd.Series(detrend(continuous_obs.values), index = continuous_obs.index)
+    detrended_exceedence = continuous_obs_detrended > continuous_obs_detrended.quantile(0.75)
+    
+    jfilter_det = filter_predictor_set(X_trainval.reindex(continuous_obs.index), detrended_exceedence, return_measures = False, nmost_important = 8, nbins=10)
+    
+    
+    dynamic_cols = X_trainval.loc[:,['swvl4','swvl13','z','sst','z-reg']].columns
+    dynamic_cols = dynamic_cols[~dynamic_cols.get_loc_level(-1, 'clustid')[0]] # Throw away the unclassified regime
+    #dynamic_cols = dynamic_cols[~dynamic_cols.get_loc_level('z-reg', 'variable')[0]] # Throw away all regimes
+    final_trainval = X_trainval.loc[:,jfilter.columns.union(jfilter_det.columns).union(dynamic_cols)]
+    #final_trainval = X_trainval.loc[:,jfilter_det.columns.union(dynamic_cols)]
+    #final_trainval = X_trainval.loc[:,jfilter.columns.union(dynamic_cols)]
+    #final_trainval = X_trainval.loc[:,jfilter.columns.union(jfilter_det.columns)]
+    #final_trainval = X_trainval.loc[:,dynamic_cols] #jfilter_det
+    #final_trainval = jfilter_det
+    #final_trainval = X_trainval.drop(dynamic_cols, axis = 1)
+    #final_trainval = X_trainval.loc[:,~X_trainval.columns.get_loc_level(-1, 'clustid')[0]] # Throw away the unclassified
+    
+    """
+    optionally Saving for later
+    """
+    #savedir = Path('/nobackup/users/straaten/predsets/full/')
+    #savedir = Path('/nobackup/users/straaten/predsets/preselected/')
+    #savename = f'tg-ex-q0.75-21D_ge{ndaythreshold}D_sep{leadtimepool[0]}-{leadtimepool[-1]}'
+    #savename = f'tg-anom_JJA_45r1_31D-roll-mean_sep{leadtimepool[0]}-{leadtimepool[-1]}'
+    #predictors.loc[:,final_trainval.columns].to_hdf(savedir / f'{savename}_predictors.h5', key = 'input')
+    #forc.to_hdf(savedir / f'{savename}_forc.h5', key = 'input')
+    #obs.to_hdf(savedir / f'{savename}_obs.h5', key = 'target')
+else:
+    final_trainval = X_trainval
 
 """
 Preparation of ANN input and a benchmark
@@ -101,7 +111,9 @@ Preparation of ANN input and a benchmark
 climprobkwargs, _, _ = multiclass_logistic_regression_coefficients(obs_trainval) # If multiclass will return the coeficients for all 
 time_input, time_scaler, lr = singleclass_regression(obs_trainval_bool, regressor = LogisticRegression ) # fit a singleclass for the last category, this will be able to form the benchmark 
 #time_input, time_scaler, lr = singleclass_regression(obs_trainval_bool, regressor = LinearRegression) # fit a singleclass for the last category, this will be able to form the benchmark 
-feature_input, feature_scaler = scale_other_features(final_trainval)
+feature_input, feature_scaler = scale_other_features(final_trainval) 
+if crossval_scaling:
+    feature_input = final_trainval.values # Override
 obs_input = obs_trainval.copy().values
 
 """
@@ -146,10 +158,10 @@ constructor = ConstructorAndCompiler(construct_modeldev_model, construct_kwargs,
 fit_kwargs = dict(batch_size = 32, epochs = 200, shuffle = True, callbacks = [earlystop(10)])
 
 if multi_eval:
-    results = multi_fit_multi_eval(constructor, X_trainval = (feature_input, raw_predictions), y_trainval = obs_input, generator = generator, fit_kwargs = fit_kwargs)
+    results = multi_fit_multi_eval(constructor, X_trainval = (feature_input, raw_predictions), y_trainval = obs_input, generator = generator, fit_kwargs = fit_kwargs, scale_cv_mode = crossval_scaling)
     results.columns = ['crossentropy','accuracy','brier'] # coould potentially also be inside the multi_eval, but difficult to get names from the mixture of strings and other
 else:
-    score, predictions = multi_fit_single_eval(constructor, X_trainval = (feature_input, raw_predictions), y_trainval = obs_input, generator = generator, fit_kwargs = fit_kwargs, return_predictions = True)
+    score, predictions = multi_fit_single_eval(constructor, X_trainval = (feature_input, raw_predictions), y_trainval = obs_input, generator = generator, fit_kwargs = fit_kwargs, return_predictions = True, scale_cv_mode = crossval_scaling)
 
 generator.reset()
 
@@ -197,7 +209,44 @@ if multi_eval:
 else: # RPSS benchmarks
     benchmarkraw = ranked_prob_score(forc_trainval.values, obs_trainval.values)
     benchmarktrend = ranked_prob_score(lr.predict_proba(time_input), obs_trainval.values)
-    print(f'RPS_raw    RPS_trend: ')
-    print(f'{np.round(benchmarkraw, 3)}       {np.round(benchmarktrend, 3)}')
-    #print(f'RPSS_raw    RPSS_trend: ')
-    #print(f'{np.round(1 - score / benchmarkraw, 3)}       {np.round(1 - score / benchmarktrend, 3)}')
+    #print(f'RPS_raw    RPS_trend: ')
+    #print(f'{np.round(benchmarkraw, 3)}       {np.round(benchmarktrend, 3)}')
+    print(f'RPSS_raw    RPSS_trend: ')
+    print(f'{np.round(1 - score / benchmarkraw, 3)}       {np.round(1 - score / benchmarktrend, 3)}')
+
+generator.reset()
+
+"""
+Statistics in the cv 
+"""
+stats = {}
+for i, (trainind, valind) in enumerate(generator): # Entering the crossvalidation
+    stats.update({('obs',i,'train'):obs_trainval.iloc[trainind,focus_class].mean()})
+    stats.update({('obs',i,'val'):obs_trainval.iloc[valind,focus_class].mean()})
+    stats.update({('for',i,'train'):forc_trainval.iloc[trainind,focus_class].mean()})
+    stats.update({('for',i,'val'):forc_trainval.iloc[valind,focus_class].mean()})
+stats = pd.Series(stats)
+    
+#obs.groupby(obs.index.get_level_values('time').year).sum()
+#forc.groupby(forc.index.get_level_values('time').year).mean()
+
+"""
+danger zone
+"""
+model = constructor.fresh_model()
+val_time = slice('2016-01-01','2016-12-31',None)
+valind = forc_trainval.index.get_loc_level(val_time,'time')[0]
+trainind = ~valind
+#model.fit(x = [feature_input[trainind,:], raw_predictions[trainind,:]], y=obs_input[trainind,:], validation_data = ([feature_input[valind,:], raw_predictions[valind,:]], obs_input[valind,:]), **fit_kwargs)
+#fit_kwargs['shuffle'] = False
+#fit_kwargs['epochs'] = 20
+model.fit(x = [feature_input, raw_predictions], y=obs_input, validation_split = 0.5, **fit_kwargs)
+
+time_test = time_scaler.transform(obs_test.index.get_level_values('time').to_julian_date()[:,np.newaxis])
+feature_test = feature_scaler.transform(X_test)
+raw_test = multiclass_log_forecastprob(forc_test)
+score = model.evaluate([feature_test,raw_test],obs_test.values)
+test_pred = model.predict([feature_test,raw_test])
+train_pred = model.predict([feature_input, raw_predictions]) 
+print(np.mean((obs_test.iloc[:,focus_class] - forc_test.iloc[:,focus_class])**2))
+print(np.mean((obs_test.iloc[:,focus_class] - lr.predict(time_test))**2))

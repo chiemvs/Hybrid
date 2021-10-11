@@ -3,7 +3,7 @@ import pandas as pd
 
 from typing import Union, Callable
 
-from .dataprep import  GroupedGenerator,SingleGenerator
+from .dataprep import  GroupedGenerator,SingleGenerator, scale_other_features
 
 """
 The place with functionality for 
@@ -23,7 +23,7 @@ def ranked_prob_score(forecasts : np.ndarray, observations: np.ndarray, weights:
     rps = np.average(distances_over_classes, axis = 0, weights = weights) # Over samples
     return rps
 
-def multi_fit_single_eval(constructor, X_trainval: list[np.ndarray,np.ndarray], y_trainval: np.ndarray, generator: Union[GroupedGenerator,SingleGenerator], fit_kwargs: dict = dict(batch_size = 32, epochs = 200), score_func: Callable = ranked_prob_score, return_predictions: bool = False) -> float:
+def multi_fit_single_eval(constructor, X_trainval: list[np.ndarray,np.ndarray], y_trainval: np.ndarray, generator: Union[GroupedGenerator,SingleGenerator], fit_kwargs: dict = dict(batch_size = 32, epochs = 200), score_func: Callable = ranked_prob_score, return_predictions: bool = False, scale_cv_mode: bool = False) -> float:
     """
     Initialized constructer will supply on demand new freshly inilizated models
     this function fits as many (neural) models as the generator generates train/validation subsets 
@@ -36,6 +36,9 @@ def multi_fit_single_eval(constructor, X_trainval: list[np.ndarray,np.ndarray], 
     for trainind, valind in generator: # Entering the crossvalidation
         X_train, X_extra_train = X_trainval[0][trainind,:], X_trainval[-1][trainind,...]
         X_val, X_extra_val = X_trainval[0][valind,:], X_trainval[-1][valind,...]
+        if scale_cv_mode:
+            X_train, feature_scaler = scale_other_features(X_train)
+            X_val, feature_scaler = scale_other_features(X_val, fitted_scaler = feature_scaler)
         y_train = y_trainval[trainind,...]
         y_val = y_trainval[valind,...]
         model = constructor.fresh_model() # With neural nets it is important that we re-initialize
@@ -54,7 +57,7 @@ def multi_fit_single_eval(constructor, X_trainval: list[np.ndarray,np.ndarray], 
     else:
         return score, histories
 
-def multi_fit_multi_eval(constructor, X_trainval: tuple[np.ndarray,np.ndarray], y_trainval: np.ndarray, generator: Union[GroupedGenerator,SingleGenerator], fit_kwargs: dict = dict(batch_size = 32, epochs = 200)) -> pd.DataFrame:
+def multi_fit_multi_eval(constructor, X_trainval: tuple[np.ndarray,np.ndarray], y_trainval: np.ndarray, generator: Union[GroupedGenerator,SingleGenerator], fit_kwargs: dict = dict(batch_size = 32, epochs = 200), scale_cv_mode: bool = False) -> pd.DataFrame:
     """
     Initialized constructer will supply on demand new freshly inilizated models
     this function fits as many (neural) models as the generator generates train/validation subsets 
@@ -71,6 +74,9 @@ def multi_fit_multi_eval(constructor, X_trainval: tuple[np.ndarray,np.ndarray], 
     for i, (trainind, valind) in enumerate(generator): # Entering the crossvalidation
         X_train, X_extra_train = X_trainval[0][trainind,:], X_trainval[-1][trainind,...]
         X_val, X_extra_val = X_trainval[0][valind,:], X_trainval[-1][valind,...]
+        if scale_cv_mode:
+            X_train, feature_scaler = scale_other_features(X_train)
+            X_val, feature_scaler = scale_other_features(X_val, fitted_scaler = feature_scaler)
         y_train = y_trainval[trainind,...]
         y_val = y_trainval[valind,...]
         model = constructor.fresh_model() # With neural nets it is important that we re-initialize
