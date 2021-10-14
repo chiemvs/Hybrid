@@ -116,9 +116,9 @@ def construct_modeldev_model(n_classes: int, n_hidden_layers: int, n_features: i
 
 preferred_loss = tf.keras.losses.CategoricalCrossentropy(from_logits = False) # Under the hood logits are still used, but from cached ._keras_logits from e.g. softmax. Logits are no direct outputs of the model (only logarithms would be possible)
 
-def earlystop(patience: int = 10):
+def earlystop(patience: int = 10, monitor: str = 'val_loss'):
     return tf.keras.callbacks.EarlyStopping(
-        monitor='val_loss', min_delta=0, patience=patience,
+        monitor=monitor, min_delta=0, patience=patience,
         verbose=1, mode='auto', restore_best_weights=True) 
 
 reducelr = tf.keras.callbacks.ReduceLROnPlateau(

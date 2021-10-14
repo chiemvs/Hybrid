@@ -22,6 +22,7 @@ focus_class = -1 # Index of the class to be scored and benchmarked through bss
 multi_eval = True # Single aggregated score or one per fold
 preload = True
 crossval = True
+balanced = True # Whether to use the balanced (hot dry years) version of crossvaldation. Folds are non-consecutive but still split by year. keyword ignored if crossval == False
 crossval_scaling = True # Wether to do also minmax scaling in cv mode
 nfolds = 3
 #targetname = 'books_paper3-2_tg-ex-q0.75-21D_JJA_45r1_1D_0.01-t2m-grid-mean.csv' 
@@ -32,19 +33,20 @@ predictors, forc, obs = prepare_full_set(targetname, ndaythreshold = ndaythresho
 if preload: # For instance a predictor set coming from 
     #loadpath = '/nobackup/users/straaten/predsets/objective_cv/tg-ex-q0.75-21D_ge7D_sep19-21_multi_d20_b1_predictors.h5'
     loadpath = '/nobackup/users/straaten/predsets/objective_cv/tg-ex-q0.75-21D_ge7D_sep12-15_multi_d20_b1_predictors.h5'
-    predictors = pd.read_hdf(loadpath, key = 'input').iloc[:,:3]
+    #loadpath = '/nobackup/users/straaten/predsets/objective/tg-anom_JJA_45r1_31D-roll-mean_sep12-15_multi_d20_b1_predictors.h5'
+    predictors = pd.read_hdf(loadpath, key = 'input').iloc[:,:15]
 
 
 """
 Predictand replacement with tg-anom
 Quite involved because thresholds need to be matched
 """
-tganom_name = 'books_paper3-1_tg-anom_JJA_45r1_31D-roll-mean_15-t2m-q095-adapted-mean.csv'
-climname = 'tg-anom_clim_1998-06-07_2019-10-31_31D-roll-mean_15-t2m-q095-adapted-mean_5_5_q0.75'
-modelclimname = 'tg-anom_45r1_1998-06-07_2019-08-31_31D-roll-mean_15-t2m-q095-adapted-mean_5_5_q0.75'
-
-tgobs, tgforc = read_tganom_predictand(booksname = tganom_name, clustid = target_region, separation = leadtimepool, climname = climname, modelclimname = modelclimname) 
-forc, obs = tgforc.loc[forc.index,:], tgobs.loc[forc.index,:]
+#tganom_name = 'books_paper3-1_tg-anom_JJA_45r1_31D-roll-mean_15-t2m-q095-adapted-mean.csv'
+#climname = 'tg-anom_clim_1998-06-07_2019-10-31_31D-roll-mean_15-t2m-q095-adapted-mean_5_5_q0.75'
+#modelclimname = 'tg-anom_45r1_1998-06-07_2019-08-31_31D-roll-mean_15-t2m-q095-adapted-mean_5_5_q0.75'
+#
+#tgobs, tgforc = read_tganom_predictand(booksname = tganom_name, clustid = target_region, separation = leadtimepool, climname = climname, modelclimname = modelclimname) 
+#forc, obs = tgforc.loc[forc.index,:], tgobs.loc[forc.index,:]
 
 
 """
@@ -57,9 +59,9 @@ Predictand replacement with regimes
 """
 Cross validation
 """
-X_test, X_trainval, generator = test_trainval_split(predictors, crossval = crossval, nfolds = nfolds)
-forc_test, forc_trainval, generator = test_trainval_split(forc, crossval = crossval, nfolds = nfolds)
-obs_test, obs_trainval, generator = test_trainval_split(obs, crossval = crossval, nfolds = nfolds)
+X_test, X_trainval, generator = test_trainval_split(predictors, crossval = crossval, nfolds = nfolds, balanced = balanced)
+forc_test, forc_trainval, generator = test_trainval_split(forc, crossval = crossval, nfolds = nfolds, balanced = balanced)
+obs_test, obs_trainval, generator = test_trainval_split(obs, crossval = crossval, nfolds = nfolds, balanced = balanced)
 # Observation is already onehot encoded. Make a boolean last-class one for the benchmarks and the RF regressor
 obs_trainval_bool = obs_trainval.iloc[:,focus_class].astype(bool)
 
@@ -155,7 +157,7 @@ compile_kwargs = dict(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
 
 constructor = ConstructorAndCompiler(construct_modeldev_model, construct_kwargs, compile_kwargs)
 
-fit_kwargs = dict(batch_size = 32, epochs = 200, shuffle = True, callbacks = [earlystop(10)])
+fit_kwargs = dict(batch_size = 32, epochs = 200, shuffle = True, callbacks = [earlystop(patience = 10, monitor = 'val_loss')])
 
 if multi_eval:
     results = multi_fit_multi_eval(constructor, X_trainval = (feature_input, raw_predictions), y_trainval = obs_input, generator = generator, fit_kwargs = fit_kwargs, scale_cv_mode = crossval_scaling)
@@ -233,14 +235,16 @@ stats = pd.Series(stats)
 """
 danger zone
 """
+if crossval_scaling:
+    feature_input, feature_scaler = scale_other_features(final_trainval) 
 model = constructor.fresh_model()
-val_time = slice('2016-01-01','2016-12-31',None)
-valind = forc_trainval.index.get_loc_level(val_time,'time')[0]
-trainind = ~valind
+#val_time = slice('2015-01-01','2016-12-31',None)
+#valind = forc_trainval.index.get_loc_level(val_time,'time')[0]
+#trainind = ~valind
 #model.fit(x = [feature_input[trainind,:], raw_predictions[trainind,:]], y=obs_input[trainind,:], validation_data = ([feature_input[valind,:], raw_predictions[valind,:]], obs_input[valind,:]), **fit_kwargs)
-#fit_kwargs['shuffle'] = False
+##fit_kwargs['shuffle'] = False
 #fit_kwargs['epochs'] = 20
-model.fit(x = [feature_input, raw_predictions], y=obs_input, validation_split = 0.5, **fit_kwargs)
+model.fit(x = [feature_input, raw_predictions], y=obs_input, validation_split = 0.2, **fit_kwargs)
 
 time_test = time_scaler.transform(obs_test.index.get_level_values('time').to_julian_date()[:,np.newaxis])
 feature_test = feature_scaler.transform(X_test)

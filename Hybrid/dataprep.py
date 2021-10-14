@@ -163,7 +163,8 @@ def categorize_hotday_predictand(df: Union[pd.Series, pd.DataFrame], lower_split
         return pd.Series(vals, index = df.index), bounds
     elif isinstance(df, pd.DataFrame):
         returns = pd.DataFrame(np.nan, index = df.index, columns = bounds.index)
-        alpha = 1/3 
+        alpha = 0.9 #1/3 
+        warnings.warn(f'using alpha {alpha} for forecast categorization')
         n_positions = df.shape[-1] + 1
         for categoryid in bounds.index:
             n_present = (vals == categoryid).sum(axis = 1)
@@ -320,19 +321,21 @@ class SingleGenerator(object):
             memo[id_self] = _copy
         return _copy
 
-def test_trainval_split(df: Union[pd.Series, pd.DataFrame], crossval: bool = False, nfolds: int = 4) -> tuple[Union[pd.Series, pd.DataFrame],Union[GroupedGenerator,SingleGenerator]]:
+def test_trainval_split(df: Union[pd.Series, pd.DataFrame], crossval: bool = False, nfolds: int = 3, balanced: bool = True) -> tuple[Union[pd.Series, pd.DataFrame],Union[GroupedGenerator,SingleGenerator]]:
     """
     Hardcoded train/val test split, supplied dataset should be indexed by time
     Returns a single test set and a single combined train/validation set,
     plus a generator that can be called for the right indices for the latter 
     crossval = True with nfolds = 4 will lead to 4 times different indices, which are split by year  
+    Option to do a predetermined (hardcoded) crossval that balances hot and cold years over the folds.
+    Only works with three folds
     """
     assert df.index.names[0] == 'time', 'Dataframe or series should be indexed by time at zeroth level'
     extra_levels_indexer = (slice(None),) * (df.index.nlevels - 1) # levels in addition to time
 
     test_time = slice('2017-01-01',None,None) # all the way till last available date
     trainval_time = slice(None,'2016-12-31',None)
-
+    
     if isinstance(df, pd.DataFrame):
         testset = df.loc[(test_time,) + extra_levels_indexer,:]
         trainvalset = df.loc[(trainval_time,) + extra_levels_indexer,:]
@@ -343,6 +346,13 @@ def test_trainval_split(df: Union[pd.Series, pd.DataFrame], crossval: bool = Fal
     if not crossval:
         val_time = slice('2013-01-01','2016-12-31',None)
         generator = SingleGenerator(trainvalset.index.get_loc_level(val_time,'time')[0]) # This passes the boolean array to the generator
+    elif balanced:
+        assert nfolds == 3, 'hardcoded balanced crossvalidation only done for three folds'
+        division = pd.Series([0,1,2,0,1,2,0,2,1,0,1,2,0,1,2,99,99,99,2,1,0,99], index = pd.RangeIndex(1998,2020, name = 'year'))
+        division = division.reindex(df.index.get_level_values('time').year).values
+        testset = df.loc[division == 99] # Actually a slightly different test set, and array indexing as opposed to slicing
+        trainvalset = df.loc[division != 99]
+        generator = GroupedGenerator(groups = division[division != 99])
     else:
         years = trainvalset.index.get_level_values('time').year
         unique_years = years.unique()
@@ -463,7 +473,7 @@ def scale_time(df: Union[pd.Series,pd.DataFrame], fitted_scaler: MinMaxScaler = 
         scaled_input = fitted_scaler.transform(time_input)
     return scaled_input, fitted_scaler
 
-def scale_other_features(df: pd.DataFrame, fitted_scaler: MinMaxScaler = None) -> tuple[np.ndarray, MinMaxScaler]:
+def scale_other_features(df: Union[pd.DataFrame,np.ndarray], fitted_scaler: MinMaxScaler = None) -> tuple[np.ndarray, MinMaxScaler]:
     """
     Simple scaling of an input feature dataset (nsamples, nfeatures)
     """
