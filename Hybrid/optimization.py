@@ -1,9 +1,9 @@
 import numpy as np
 import pandas as pd
 
-from typing import Union, Callable
+from typing import Union, Callable, List, Tuple
 
-from .dataprep import  GroupedGenerator,SingleGenerator, scale_other_features
+from .dataprep import  GroupedGenerator, SingleGenerator, scale_other_features
 
 """
 The place with functionality for 
@@ -23,7 +23,7 @@ def ranked_prob_score(forecasts : np.ndarray, observations: np.ndarray, weights:
     rps = np.average(distances_over_classes, axis = 0, weights = weights) # Over samples
     return rps
 
-def multi_fit_single_eval(constructor, X_trainval: list[np.ndarray,np.ndarray], y_trainval: np.ndarray, generator: Union[GroupedGenerator,SingleGenerator], fit_kwargs: dict = dict(batch_size = 32, epochs = 200), score_func: Callable = ranked_prob_score, return_predictions: bool = False, scale_cv_mode: bool = False) -> float:
+def multi_fit_single_eval(constructor, X_trainval: Tuple[np.ndarray,np.ndarray], y_trainval: np.ndarray, generator: Union[GroupedGenerator,SingleGenerator], fit_kwargs: dict = dict(batch_size = 32, epochs = 200), score_func: Callable = ranked_prob_score, return_predictions: bool = False, scale_cv_mode: bool = False) -> float:
     """
     Initialized constructer will supply on demand new freshly inilizated models
     this function fits as many (neural) models as the generator generates train/validation subsets 
@@ -57,7 +57,7 @@ def multi_fit_single_eval(constructor, X_trainval: list[np.ndarray,np.ndarray], 
     else:
         return score, histories
 
-def multi_fit_multi_eval(constructor, X_trainval: tuple[np.ndarray,np.ndarray], y_trainval: np.ndarray, generator: Union[GroupedGenerator,SingleGenerator], fit_kwargs: dict = dict(batch_size = 32, epochs = 200), scale_cv_mode: bool = False) -> pd.DataFrame:
+def multi_fit_multi_eval(constructor, X_trainval: Tuple[np.ndarray,np.ndarray], y_trainval: np.ndarray, generator: Union[GroupedGenerator,SingleGenerator], fit_kwargs: dict = dict(batch_size = 32, epochs = 200), scale_cv_mode: bool = False) -> pd.DataFrame:
     """
     Initialized constructer will supply on demand new freshly inilizated models
     this function fits as many (neural) models as the generator generates train/validation subsets 

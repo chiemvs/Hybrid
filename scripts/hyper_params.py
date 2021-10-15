@@ -17,7 +17,8 @@ from Hybrid.optimization import multi_fit_single_eval
 Reading in pre-selected predictor sets 
 and preconstructed targets
 """
-savedir = Path('/nobackup/users/straaten/predsets/preselected/')
+#savedir = Path('/nobackup/users/straaten/predsets/preselected/')
+savedir = Path('/scistor/ivm/jsn295/backup/predsets/preselected/')
 #savename = 'tg-ex-q0.75-21D_ge7D_sep19-21_single'
 #savename = 'tg-ex-q0.75-21D_ge7D_sep12-15' 
 savename = 'tg-ex-q0.75-21D_ge7D_sep12-15_balanced' 
@@ -56,8 +57,8 @@ parameters = [sherpa.Continuous(name='lr', range=[0.0003, 0.002]),
 algorithm = sherpa.algorithms.RandomSearch(max_num_trials=200)
 study = sherpa.Study(parameters=parameters,
                      dashboard_port=8888,
-                     disable_dashboard=False,
-                     output_dir=f'/nobackup/users/straaten/predsets/preselected/{savename}/',
+                     disable_dashboard=True,
+                     output_dir= savedir / savename,
                      algorithm=algorithm,
                      lower_is_better=True)
 
