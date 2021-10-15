@@ -18,8 +18,9 @@ sys.path.append(os.path.expanduser('~/Documents/Weave/'))
 from Weave.utils import collapse_restore_multiindex
 
 opendir = Path('/nobackup/users/straaten/predsets/full/')
-savedir = Path('/nobackup/users/straaten/predsets/objective/')
+#savedir = Path('/nobackup/users/straaten/predsets/objective/')
 #savedir = Path('/nobackup/users/straaten/predsets/objective_cv/')
+savedir = Path('/nobackup/users/straaten/predsets/objective_balanced_cv/')
 #opendir = Path('/scistor/ivm/jsn295/backup/predsets/full/')
 #savename = f'tg-ex-q0.75-21D_ge7D_sep19-21'
 #savename = f'tg-ex-q0.75-21D_ge7D_sep12-15'
@@ -28,13 +29,14 @@ predictors = pd.read_hdf(opendir / f'{savename}_predictors.h5', key = 'input')
 forc = pd.read_hdf(opendir / f'{savename}_forc.h5', key = 'input')
 obs = pd.read_hdf(opendir / f'{savename}_obs.h5', key = 'target')
 
-crossval = False
+crossval = True
+balanced = True # Whether to use the balanced (hot dry years) version of crossvaldation. Folds are non-consecutive but still split by year. keyword ignored if crossval == False
 crossval_scaling = True # Wether to do also minmax scaling in cv mode
 nfolds = 3
 
-X_test, X_trainval, generator = test_trainval_split(predictors, crossval = crossval, nfolds = nfolds)
-forc_test, forc_trainval, generator = test_trainval_split(forc, crossval = crossval, nfolds = nfolds)
-obs_test, obs_trainval, generator = test_trainval_split(obs, crossval = crossval, nfolds = nfolds)
+X_test, X_trainval, generator = test_trainval_split(predictors, crossval = crossval, nfolds = nfolds, balanced = balanced)
+forc_test, forc_trainval, generator = test_trainval_split(forc, crossval = crossval, nfolds = nfolds, balanced = balanced)
+obs_test, obs_trainval, generator = test_trainval_split(obs, crossval = crossval, nfolds = nfolds, balanced = balanced)
 
 
 climprobkwargs, time_input, time_scaler = multiclass_logistic_regression_coefficients(obs_trainval) # If multiclass will return the coeficients for all 
@@ -84,17 +86,21 @@ def score_model(training_data: Tuple[np.ndarray,np.ndarray], scoring_data: tuple
             shuffle = True,
             callbacks = [earlystop(10)])
 
-    score, histories = multi_fit_single_eval(constructor, X_trainval = (feature_trainval, raw_predictions), y_trainval = y_trainval, generator = g, fit_kwargs = fit_kwargs, return_predictions = False, scale_cv_mode = crossval_scaling) # Scores with RPS
+    scores = np.repeat(np.nan, n_eval)
+    for i in range(n_eval):  # Possibly later in parallel
+        score, histories = multi_fit_single_eval(constructor, X_trainval = (feature_trainval, raw_predictions), y_trainval = y_trainval, generator = g, fit_kwargs = fit_kwargs, return_predictions = False, scale_cv_mode = crossval_scaling) # Scores with RPS
+        g.reset()
+        scores[i] = score
     # for SingleGenerator nans are written in multi_fit_single_eval when doing only one fold. Therefore handled in the single_eval
-    return score
+    return scores.mean()
 
-#test2 = score_model((feature_input[:,:10],obs_input))
 
 # THe n_jobs argument does not concern any bootstrapping, it concerns multiprocess evaluation. But tensorflow seems unable to fit in multiple processes.
 # For bootstrapping and the score_model returning an array, it should be able to handle that with 'min' (namely 'argmin_of_mean' internally)
 
-nbootstrap = 1
+n_eval = 3 # Shuffling and random weight initialization lead to randomness, possibility to use multiple evaluations
 depth = 20
+#test2 = score_model((feature_input[:,:10],obs_input))
 newframe, oldlevels, olddtypes = collapse_restore_multiindex(X_test, axis = 1, inplace = False) # extracting names
 result = sequential_forward_selection(training_data = (feature_input[:,:],obs_input), scoring_data = (feature_input[:,:],obs_input), scoring_fn = score_model, scoring_strategy = 'min', nimportant_vars = depth, variable_names=newframe.columns[:], njobs = 1)
 
@@ -103,10 +109,10 @@ multipass = result.retrieve_multipass()
 
 # Writing out the selection and the whole predictor subset
 singleresult = pd.DataFrame(singlepass, index = ['rank','rps'])
-singleresult.to_csv(savedir / f'{savename}_single_b{nbootstrap}.csv')
+singleresult.to_csv(savedir / f'{savename}_single_b{n_eval}.csv')
 multiresult = pd.DataFrame(multipass, index = ['rank','rps'])
-multiresult.to_csv(savedir / f'{savename}_multi_d{depth}_b{nbootstrap}.csv')
+multiresult.to_csv(savedir / f'{savename}_multi_d{depth}_b{n_eval}.csv')
 
 subset = predictors.iloc[:,newframe.columns.get_indexer(multiresult.columns)] # ordered by rank
-subset.to_hdf(savedir / f'{savename}_multi_d{depth}_b{nbootstrap}_predictors.h5', key = 'input')
+subset.to_hdf(savedir / f'{savename}_multi_d{depth}_b{n_eval}_predictors.h5', key = 'input')
 

@@ -18,20 +18,28 @@ Reading in pre-selected predictor sets
 and preconstructed targets
 """
 savedir = Path('/nobackup/users/straaten/predsets/preselected/')
-savename = 'tg-ex-q0.75-21D_ge7D_sep19-21_single'
+#savename = 'tg-ex-q0.75-21D_ge7D_sep19-21_single'
 #savename = 'tg-ex-q0.75-21D_ge7D_sep12-15' 
+savename = 'tg-ex-q0.75-21D_ge7D_sep12-15_balanced' 
 #savename = 'tg-anom_JJA_45r1_31D-roll-mean_sep19-21' 
 predictors = pd.read_hdf(savedir / f'{savename}_predictors.h5', key = 'input')
 forc = pd.read_hdf(savedir / f'{savename}_forc.h5', key = 'input')
 obs = pd.read_hdf(savedir / f'{savename}_obs.h5', key = 'target')
 
-X_test, X_trainval, generator = test_trainval_split(predictors, crossval = False, nfolds = 6)
-forc_test, forc_trainval, generator = test_trainval_split(forc, crossval = False, nfolds = 6)
-obs_test, obs_trainval, generator = test_trainval_split(obs, crossval = False, nfolds = 6)
+crossval = True
+balanced = True # Whether to use the balanced (hot dry years) version of crossvaldation. Folds are non-consecutive but still split by year. keyword ignored if crossval == False
+crossval_scaling = True # Wether to do also minmax scaling in cv mode
+nfolds = 3
 
+X_test, X_trainval, generator = test_trainval_split(predictors, crossval = crossval, nfolds = nfolds, balanced = balanced)
+forc_test, forc_trainval, generator = test_trainval_split(forc, crossval = crossval, nfolds = nfolds, balanced = balanced)
+obs_test, obs_trainval, generator = test_trainval_split(obs, crossval = crossval, nfolds = nfolds, balanced = balanced)
 
 climprobkwargs, time_input, time_scaler = multiclass_logistic_regression_coefficients(obs_trainval) # If multiclass will return the coeficients for all 
-feature_input, feature_scaler = scale_other_features(X_trainval)
+if crossval_scaling:
+    feature_input = X_trainval.values
+else:
+    feature_input, feature_scaler = scale_other_features(X_trainval)
 obs_input = obs_trainval.copy().values
 raw_predictions = multiclass_log_forecastprob(forc_trainval)
 
@@ -48,7 +56,7 @@ parameters = [sherpa.Continuous(name='lr', range=[0.0003, 0.002]),
 algorithm = sherpa.algorithms.RandomSearch(max_num_trials=200)
 study = sherpa.Study(parameters=parameters,
                      dashboard_port=8888,
-                     disable_dashboard=True,
+                     disable_dashboard=False,
                      output_dir=f'/nobackup/users/straaten/predsets/preselected/{savename}/',
                      algorithm=algorithm,
                      lower_is_better=True)
@@ -73,7 +81,7 @@ for trial in study:
     n_eval = 8
     scores = np.repeat(np.nan, n_eval)
     for i in range(n_eval):  # Possibly later in parallel
-        score, histories = multi_fit_single_eval(constructor, X_trainval = (feature_input, raw_predictions), y_trainval = obs_input, generator = generator, fit_kwargs = fit_kwargs, return_predictions = False)
+        score, histories = multi_fit_single_eval(constructor, X_trainval = (feature_input, raw_predictions), y_trainval = obs_input, generator = generator, fit_kwargs = fit_kwargs, return_predictions = False, scale_cv_mode = crossval_scaling)
         generator.reset()
         epochs = [len(h.epoch) for h in histories]
         scores[i] = score
