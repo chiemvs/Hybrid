@@ -245,7 +245,7 @@ model = constructor.fresh_model()
 #model.fit(x = [feature_input[trainind,:], raw_predictions[trainind,:]], y=obs_input[trainind,:], validation_data = ([feature_input[valind,:], raw_predictions[valind,:]], obs_input[valind,:]), **fit_kwargs)
 ##fit_kwargs['shuffle'] = False
 #fit_kwargs['epochs'] = 20
-model.fit(x = [feature_input, raw_predictions], y=obs_input, validation_split = 0.2, **fit_kwargs)
+model.fit(x = [feature_input, raw_predictions], y=obs_input, validation_split = 0.4, **fit_kwargs)
 
 time_test = time_scaler.transform(obs_test.index.get_level_values('time').to_julian_date()[:,np.newaxis])
 feature_test = feature_scaler.transform(X_test)
