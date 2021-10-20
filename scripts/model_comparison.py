@@ -33,7 +33,8 @@ targetname = 'books_paper3-2_tg-ex-q0.75-21D_JJA_45r1_1D_15-t2m-q095-adapted-mea
 predictors, forc, obs = prepare_full_set(targetname, ndaythreshold = ndaythreshold, predictand_cluster = target_region, leadtimepool = leadtimepool)
 if preload: # For instance a predictor set coming from 
     #loadpath = '/nobackup/users/straaten/predsets/objective_cv/tg-ex-q0.75-21D_ge7D_sep19-21_multi_d20_b1_predictors.h5'
-    loadpath = '/nobackup/users/straaten/predsets/objective_cv/tg-ex-q0.75-21D_ge7D_sep12-15_multi_d20_b1_predictors.h5'
+    #loadpath = '/nobackup/users/straaten/predsets/objective_cv/tg-ex-q0.75-21D_ge7D_sep12-15_multi_d20_b1_predictors.h5'
+    loadpath = '/nobackup/users/straaten/predsets/objective_balanced_cv/tg-anom_JJA_45r1_31D-roll-mean_sep12-15_multi_d20_b3_predictors.h5'
     #loadpath = '/nobackup/users/straaten/predsets/objective/tg-anom_JJA_45r1_31D-roll-mean_sep12-15_multi_d20_b1_predictors.h5'
     predictors = pd.read_hdf(loadpath, key = 'input').iloc[:,:15]
 
@@ -236,22 +237,22 @@ stats = pd.Series(stats)
 """
 danger zone
 """
-if crossval_scaling:
-    feature_input, feature_scaler = scale_other_features(final_trainval) 
-model = constructor.fresh_model()
-#val_time = slice('2015-01-01','2016-12-31',None)
-#valind = forc_trainval.index.get_loc_level(val_time,'time')[0]
-#trainind = ~valind
-#model.fit(x = [feature_input[trainind,:], raw_predictions[trainind,:]], y=obs_input[trainind,:], validation_data = ([feature_input[valind,:], raw_predictions[valind,:]], obs_input[valind,:]), **fit_kwargs)
-##fit_kwargs['shuffle'] = False
-#fit_kwargs['epochs'] = 20
-model.fit(x = [feature_input, raw_predictions], y=obs_input, validation_split = 0.4, **fit_kwargs)
-
-time_test = time_scaler.transform(obs_test.index.get_level_values('time').to_julian_date()[:,np.newaxis])
-feature_test = feature_scaler.transform(X_test)
-raw_test = multiclass_log_forecastprob(forc_test)
-score = model.evaluate([feature_test,raw_test],obs_test.values)
-test_pred = model.predict([feature_test,raw_test])
-train_pred = model.predict([feature_input, raw_predictions]) 
-print(np.mean((obs_test.iloc[:,focus_class] - forc_test.iloc[:,focus_class])**2))
-print(np.mean((obs_test.iloc[:,focus_class] - lr.predict(time_test))**2))
+#if crossval_scaling:
+#    feature_input, feature_scaler = scale_other_features(final_trainval) 
+#model = constructor.fresh_model()
+##val_time = slice('2015-01-01','2016-12-31',None)
+##valind = forc_trainval.index.get_loc_level(val_time,'time')[0]
+##trainind = ~valind
+##model.fit(x = [feature_input[trainind,:], raw_predictions[trainind,:]], y=obs_input[trainind,:], validation_data = ([feature_input[valind,:], raw_predictions[valind,:]], obs_input[valind,:]), **fit_kwargs)
+###fit_kwargs['shuffle'] = False
+##fit_kwargs['epochs'] = 20
+#model.fit(x = [feature_input, raw_predictions], y=obs_input, validation_split = 0.4, **fit_kwargs)
+#
+#time_test = time_scaler.transform(obs_test.index.get_level_values('time').to_julian_date()[:,np.newaxis])
+#feature_test = feature_scaler.transform(X_test)
+#raw_test = multiclass_log_forecastprob(forc_test)
+#score = model.evaluate([feature_test,raw_test],obs_test.values)
+#test_pred = model.predict([feature_test,raw_test])
+#train_pred = model.predict([feature_input, raw_predictions]) 
+#print(np.mean((obs_test.iloc[:,focus_class] - forc_test.iloc[:,focus_class])**2))
+#print(np.mean((obs_test.iloc[:,focus_class] - lr.predict(time_test))**2))
