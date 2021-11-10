@@ -12,6 +12,7 @@ from copy import deepcopy
 from typing import Union, Callable, Tuple, List
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import StratifiedKFold
 
 def categorize_hotday_predictand(df: Union[pd.Series, pd.DataFrame], lower_split_bounds: List[int]) -> Tuple[pd.Series, pd.DataFrame]:
     """
@@ -146,8 +147,9 @@ def test_trainval_split(df: Union[pd.Series, pd.DataFrame], crossval: bool = Fal
         val_time = slice('2013-01-01','2016-12-31',None)
         generator = SingleGenerator(trainvalset.index.get_loc_level(val_time,'time')[0]) # This passes the boolean array to the generator
     elif balanced:
-        assert nfolds == 3, 'hardcoded balanced crossvalidation only done for three folds'
-        division = pd.Series([0,1,2,0,1,2,0,2,1,0,1,2,0,1,2,99,99,99,2,1,0,99], index = pd.RangeIndex(1998,2020, name = 'year'))
+        assert nfolds == 3, 'balanced crossvalidation only done for three folds'
+        #division = pd.Series([0,1,2,0,1,2,0,2,1,0,1,2,0,1,2,99,99,99,2,1,0,99], index = pd.RangeIndex(1998,2020, name = 'year')) #Based on excel balancing
+        division = pd.Series([ 0,1,2,1,1,2,2,0,1,0,0,1,1,2,0,99,2,99,99,2,0,99], index = pd.RangeIndex(1998,2020, name = 'year')) # Generated with generate_balanced_kfold with forecasts > 7 hot days in 21 day period, leadtime = 19-21. 
         division = division.reindex(df.index.get_level_values('time').year).values
         testset = df.loc[division == 99] # Actually a slightly different test set, and array indexing as opposed to slicing
         trainvalset = df.loc[division != 99]
@@ -320,3 +322,46 @@ def multiclass_logistic_regression_coefficients(onehot_obs: pd.DataFrame) -> Tup
     climprobkwargs = dict(coefs = coefs, intercepts = intercepts)
     return climprobkwargs, scaled_input, time_scaler 
 
+def generate_balanced_kfold(f_probs: pd.Series, shuffle = False) -> np.ndarray:
+    """
+    Requirements:
+    - balanced random sample of high, normal, and low forecast probabilities
+    - probability classes determined by terciles
+    - test data has to be picked in 2013 and beyond (separate in 2)
+    Produces:
+    - division into 4 groups. 3 train-val folds, 1 test group
+    """
+    if not f_probs.index.dtype == np.int64: 
+        f_probs = f_probs.groupby(f_probs.index.get_level_values('time').year).mean()
+
+    hot = f_probs > f_probs.quantile(0.666)
+    cold = f_probs < f_probs.quantile(0.333)
+    normal = np.logical_and(~hot,~cold)
+    classes = pd.concat([cold*10, normal*20, hot*30], axis = 1).max(axis = 1) 
+    groups = classes.copy() # Will be overwritten 
+    print('generating test group')
+    post_2013 = classes.loc[2013:]
+    skf = StratifiedKFold(n_splits = 2, shuffle = shuffle)
+    _, testgroup = next(skf.split(post_2013, post_2013))
+    groups.loc[2013:,].iloc[testgroup] = 99 # Test part
+    print('generating trainval groups')
+    available = groups.values != 99 
+    trainvalgroups = groups.iloc[available].copy()
+    skf = StratifiedKFold(n_splits = 3, shuffle = shuffle)
+    for i, (_, valgroup) in enumerate(skf.split(classes.iloc[available], classes.iloc[available])):
+        trainvalgroups.iloc[valgroup] = i
+    groups.iloc[available] = trainvalgroups
+    return classes, groups
+
+
+if __name__ == '__main__':
+    yearset = np.arange(1998,2020)
+    # cold = -1, neutral = 0, hot = 1, cold = 0 Based on the mean forecast probability in that season
+    classes = np.array([-1,-1,0,0,0,1,0,1,1,-1,-1,0,0,0,-1,0,-1,1,0,0,1,1]) 
+    division = pd.Series(classes, index = yearset)
+    # Classes with based on forcast terciles:
+    classes2 = np.array([0,0,-1,-1,-1,1,-1,1,1,-1,-1,0,1,0,0,-1,0,1,0,1,1,1]) 
+    division2 = pd.Series(classes2, index = yearset)
+
+    # First 2 folds in 2013 + to split trainval from test there
+    # Then in all remaining years. StratifiedKFold

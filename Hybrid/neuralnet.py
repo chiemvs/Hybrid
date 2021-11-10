@@ -138,22 +138,3 @@ class ConstructorAndCompiler(object):
         model.compile(loss=preferred_loss, **self.compile_kwargs)
         return model
 
-# Preparation for the interperatability tools (perhaps a separate script)
-def sub_modeldev_model(model: tf.keras.Model) -> tf.keras.Model:
-    """
-    Extracts the portion that predicts the logarithm of the multiplier. (before the addition layer)
-    output shape equal to model, input shape equal to the model features
-    """
-    submodel = tf.keras.Model(inputs = [model.layers[0].input], outputs = [model.layers[-3].output])
-    # Make sure not trainable. Also affects the original model
-    for l in submodel.layers: 
-        l.trainable = False
-    return submodel
-    # Callable: submodel.predict([feature_input[0:2,:]]). We want to extract gradients from this.
-    x = tf.convert_to_tensor(feature_input[:2,:])
-    with tf.GradientTape() as tape:
-        tape.watch(x)
-        pred = submodel(x)
-        focus_pred = pred[:,-1] # only the positive class Or reduce to a certain number, i.e. loss
-    grad = tape.gradient(focus_pred, x)
-

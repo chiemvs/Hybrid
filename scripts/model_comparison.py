@@ -13,10 +13,10 @@ from sklearn.linear_model import LogisticRegression, LinearRegression
 sys.path.append(os.path.expanduser('~/Documents/Hybrid/'))
 from Hybrid.neuralnet import construct_modeldev_model, construct_climdev_model, reducelr, earlystop, BrierScore, ConstructorAndCompiler
 from Hybrid.optimization import multi_fit_multi_eval, multi_fit_single_eval, ranked_prob_score
-from Hybrid.dataprep import test_trainval_split, filter_predictor_set, multiclass_log_forecastprob, singleclass_regression, multiclass_logistic_regression_coefficients, scale_other_features 
+from Hybrid.dataprep import test_trainval_split, filter_predictor_set, multiclass_log_forecastprob, singleclass_regression, multiclass_logistic_regression_coefficients, scale_other_features, generate_balanced_kfold
 from Hybrid.dataloading import prepare_full_set, read_raw_predictand, read_tganom_predictand, read_raw_predictor_regimes 
 
-leadtimepool = list(range(12,16)) # #list(range(19,22)) #[7,8,9,10,11,12,13] #[10,11,12,13,14,15] #[15,16,17,18,19,20,21] # From the longest leadtimepool is taken
+leadtimepool = list(range(12,16)) #list(range(12,16)) #list(range(19,22)) #[7,8,9,10,11,12,13] #[10,11,12,13,14,15] #[15,16,17,18,19,20,21] # From the longest leadtimepool is taken
 target_region = 9 
 ndaythreshold = 7 #[3,7] #7 #[4,9] Switch to list for multiclass (n>2) predictions
 focus_class = -1 # Index of the class to be scored and benchmarked through bss
@@ -230,29 +230,29 @@ for i, (trainind, valind) in enumerate(generator): # Entering the crossvalidatio
     stats.update({('for',i,'train'):forc_trainval.iloc[trainind,focus_class].mean()})
     stats.update({('for',i,'val'):forc_trainval.iloc[valind,focus_class].mean()})
 stats = pd.Series(stats)
-    
 #obs.groupby(obs.index.get_level_values('time').year).sum()
 #forc.groupby(forc.index.get_level_values('time').year).mean()
+#classes,groups = generate_balanced_kfold(forc.loc[:,1], shuffle = True)
 
 """
 danger zone
 """
-#if crossval_scaling:
-#    feature_input, feature_scaler = scale_other_features(final_trainval) 
-#model = constructor.fresh_model()
-##val_time = slice('2015-01-01','2016-12-31',None)
-##valind = forc_trainval.index.get_loc_level(val_time,'time')[0]
-##trainind = ~valind
-##model.fit(x = [feature_input[trainind,:], raw_predictions[trainind,:]], y=obs_input[trainind,:], validation_data = ([feature_input[valind,:], raw_predictions[valind,:]], obs_input[valind,:]), **fit_kwargs)
-###fit_kwargs['shuffle'] = False
-##fit_kwargs['epochs'] = 20
-#model.fit(x = [feature_input, raw_predictions], y=obs_input, validation_split = 0.4, **fit_kwargs)
-#
-#time_test = time_scaler.transform(obs_test.index.get_level_values('time').to_julian_date()[:,np.newaxis])
-#feature_test = feature_scaler.transform(X_test)
-#raw_test = multiclass_log_forecastprob(forc_test)
-#score = model.evaluate([feature_test,raw_test],obs_test.values)
-#test_pred = model.predict([feature_test,raw_test])
-#train_pred = model.predict([feature_input, raw_predictions]) 
-#print(np.mean((obs_test.iloc[:,focus_class] - forc_test.iloc[:,focus_class])**2))
-#print(np.mean((obs_test.iloc[:,focus_class] - lr.predict(time_test))**2))
+if crossval_scaling:
+    feature_input, feature_scaler = scale_other_features(final_trainval) 
+model = constructor.fresh_model()
+#val_time = slice('2015-01-01','2016-12-31',None)
+#valind = forc_trainval.index.get_loc_level(val_time,'time')[0]
+#trainind = ~valind
+#model.fit(x = [feature_input[trainind,:], raw_predictions[trainind,:]], y=obs_input[trainind,:], validation_data = ([feature_input[valind,:], raw_predictions[valind,:]], obs_input[valind,:]), **fit_kwargs)
+##fit_kwargs['shuffle'] = False
+#fit_kwargs['epochs'] = 20
+model.fit(x = [feature_input, raw_predictions], y=obs_input, validation_split = 0.4, **fit_kwargs)
+
+time_test = time_scaler.transform(obs_test.index.get_level_values('time').to_julian_date()[:,np.newaxis])
+feature_test = feature_scaler.transform(X_test)
+raw_test = multiclass_log_forecastprob(forc_test)
+score = model.evaluate([feature_test,raw_test],obs_test.values)
+test_pred = model.predict([feature_test,raw_test])
+train_pred = model.predict([feature_input, raw_predictions]) 
+print(np.mean((obs_test.iloc[:,focus_class] - forc_test.iloc[:,focus_class])**2))
+print(np.mean((obs_test.iloc[:,focus_class] - lr.predict(time_test))**2))
