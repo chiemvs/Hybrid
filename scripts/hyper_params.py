@@ -17,16 +17,20 @@ from Hybrid.optimization import multi_fit_single_eval
 Reading in pre-selected predictor sets 
 and preconstructed targets
 """
-savedir = Path('/nobackup/users/straaten/predsets/preselected/')
-#savedir = Path('/scistor/ivm/jsn295/backup/predsets/preselected/')
-#savename = 'tg-ex-q0.75-21D_ge7D_sep19-21_single'
-#savename = 'tg-ex-q0.75-21D_ge7D_sep12-15' 
-#savename = 'tg-ex-q0.75-21D_ge7D_sep12-15_balanced' 
-savename = 'tg-ex-q0.75-21D_ge7D_sep19-21_multi_d20_b3'
-#savename = 'tg-anom_JJA_45r1_31D-roll-mean_sep19-21' 
-predictors = pd.read_hdf(savedir / f'{savename}_predictors.h5', key = 'input')
-forc = pd.read_hdf(savedir / f'{savename}_forc.h5', key = 'input')
-obs = pd.read_hdf(savedir / f'{savename}_obs.h5', key = 'target')
+targetname = 'tg-ex-q0.75-21D_ge7D_sep19-21'
+selection = 'multi_d20_b3'
+basedir = Path('/nobackup/users/straaten')
+savedir = basedir / f'hyperparams/{targetname}_{selection}'
+if savedir.exists():
+    raise ValueError(f'hyperparam directory {savedir} already exists. Overwriting prevented. Check its content.')
+else:
+    savedir.mkdir()
+predictordir = basedir / 'predsets/objective_balanced_cv/' # Objectively selected predictors
+for_obs_dir = basedir / 'predsets/full/' # contains corresponding forcasts and observations
+
+predictors = pd.read_hdf(predictordir / f'{targetname}_{selection}_predictors.h5', key = 'input')
+forc = pd.read_hdf(for_obs_dir / f'{targetname}_forc.h5', key = 'input')
+obs = pd.read_hdf(for_obs_dir / f'{targetname}_obs.h5', key = 'target')
 
 crossval = True
 balanced = True # Whether to use the balanced (hot dry years) version of crossvaldation. Folds are non-consecutive but still split by year. keyword ignored if crossval == False
@@ -59,7 +63,7 @@ algorithm = sherpa.algorithms.RandomSearch(max_num_trials=200)
 study = sherpa.Study(parameters=parameters,
                      dashboard_port=8888,
                      disable_dashboard=False,
-                     output_dir= savedir / savename,
+                     output_dir= savedir ,
                      algorithm=algorithm,
                      lower_is_better=True)
 

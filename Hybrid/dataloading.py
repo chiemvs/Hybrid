@@ -41,6 +41,21 @@ def read_dynamic_data(booksname: str, separation: Union[int,slice,List[int]], cl
     subset = modelinfo.loc[(slice(None),clustids,separation),['forecast','observation']]
     return subset
 
+def read_climate_index(filepath : str, separation: Union[int,slice,List[int]]) -> pd.DataFrame:
+    """
+    Reads pre-lagged daily RMM mjo index, originally from http://www.bom.gov.au/climate/mjo/graphics/rmm.74toRealtime.txt
+    A two-component index (rmm1 and rmm2) (of which phase and amplitude are derivatives)
+    Not possible to select a clustid because constant (always 1, a dummy value)
+
+    Or reads the pdo index, supplied by Sem (also daily, and also a dummy cluster)
+    """
+    if isinstance(separation, int):
+        separation = slice(separation,separation)
+    df = pd.read_hdf(filepath) 
+    if 'mjo' in df.columns.get_level_values('variable'):
+        df = df.iloc[:,df.columns.get_level_values('metric').isin(['rmm1','rmm2'])] # Drops phase and amplitude
+    return df.loc[(slice(None),separation),:]
+
 def read_tganom_predictand(booksname: str, separation: Union[int,slice,List[int]], clustid: int, climname: str = None, modelclimname: str = None) -> Tuple[pd.Series,pd.Series]:
     """
     Functionality from SubSeas to get doy based climatology thresholds (for observation)
@@ -196,6 +211,12 @@ def prepare_full_set(predictand_name, ndaythreshold: Union[List[int],int], predi
     empirical_set.index = empirical_set.index.droplevel('separation') # A single separation is read so we can drop that and merge to dynamical (could mean suplication)
     empirical_dynamical_set = dynamical_predictors.join(empirical_set, on = 'time', how = 'inner')
 
+    # Adding climate indices, very long timeseries, so no outer or right join
+    mjo = read_climate_index(filepath = '/nobackup/users/straaten/predsets/mjo_daily.h5', separation = leadtimepool)
+    pdo = read_climate_index(filepath = '/nobackup/users/straaten/predsets/pdo_daily.h5', separation = leadtimepool)
+    empirical_dynamical_set = empirical_dynamical_set.join(mjo, how = 'left').join(pdo, how = 'left')
+    
+
     observations, forecast = read_raw_predictand(booksname = predictand_name, clustid = predictand_cluster, separation = leadtimepool, dynamic_prediction_too = True)
     if isinstance(ndaythreshold, int):
         print(f'Binarized target: n_hotdays >= {ndaythreshold}, onehot-encoded')
@@ -206,6 +227,7 @@ def prepare_full_set(predictand_name, ndaythreshold: Union[List[int],int], predi
     observations, bounds = categorize_hotday_predictand(observations,  lower_split_bounds = ndaythreshold)
     predicted_predictand, bounds = categorize_hotday_predictand(forecast,  lower_split_bounds = ndaythreshold)
     observations = pd.DataFrame(one_hot_encoding(observations), index = observations.index, columns = bounds.index)
+
 
     # Getting the lengths equal
     index_intersection = empirical_dynamical_set.index.intersection(predicted_predictand.index).intersection(observations.index).sort_values()

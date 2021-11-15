@@ -3,7 +3,6 @@ import tensorflow as tf
 
 from typing import Callable, Union, List
 
-# Preparation for the interperatability tools (perhaps a separate script)
 def strip_modeldev(model: tf.keras.Model, exp_of_log_of_multiplier: bool = False) -> tf.keras.Model:
     """
     Extracts the portion that predicts the logarithm of the multiplier. (before the addition layer)
@@ -45,3 +44,15 @@ def gradient(submodel: tf.keras.Model, feature_inputs: np.ndarray, target_fn: Ca
 
 def backwards_optimization(submodel: tf.keras.Model, learning_rate: float = 0.001, iterations: int = 200):
     pass
+
+def combine_input_output(model: tf.keras.Model, feature_inputs: np.ndarray, log_of_raw: np.ndarray, target_class_index: int = -1):
+    """
+    Create one dataframe where raw model probabilities, correction factors, 
+    and post-processed probabilities,
+    And input values are all joined together. These can be scaled or unscaled
+    """
+    forc_raw = np.exp(log_of_raw)[:,target_class_index]
+    forc_pp = model.predict([feature_inputs,log_of_raw])[:,target_class_index]
+    subm = strip_modeldev(model, exp_of_log_of_multiplier = True) 
+    correction = subm.predict([feature_inputs])[:,target_class_index]
+

@@ -18,12 +18,10 @@ sys.path.append(os.path.expanduser('~/Documents/Weave/'))
 from Weave.utils import collapse_restore_multiindex
 
 opendir = Path('/nobackup/users/straaten/predsets/full/')
-#savedir = Path('/nobackup/users/straaten/predsets/objective/')
-#savedir = Path('/nobackup/users/straaten/predsets/objective_cv/')
 savedir = Path('/nobackup/users/straaten/predsets/objective_balanced_cv/')
 #opendir = Path('/scistor/ivm/jsn295/backup/predsets/full/')
-savename = f'tg-ex-q0.75-21D_ge7D_sep19-21'
-#savename = f'tg-ex-q0.75-21D_ge7D_sep12-15'
+#savename = f'tg-ex-q0.75-21D_ge7D_sep19-21'
+savename = f'tg-ex-q0.75-21D_ge7D_sep12-15'
 #savename = f'tg-anom_JJA_45r1_31D-roll-mean_sep12-15'
 predictors = pd.read_hdf(opendir / f'{savename}_predictors.h5', key = 'input')
 forc = pd.read_hdf(opendir / f'{savename}_forc.h5', key = 'input')

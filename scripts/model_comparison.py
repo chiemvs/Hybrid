@@ -32,10 +32,7 @@ nfolds = 3
 targetname = 'books_paper3-2_tg-ex-q0.75-21D_JJA_45r1_1D_15-t2m-q095-adapted-mean.csv'
 predictors, forc, obs = prepare_full_set(targetname, ndaythreshold = ndaythreshold, predictand_cluster = target_region, leadtimepool = leadtimepool)
 if preload: # For instance a predictor set coming from 
-    #loadpath = '/nobackup/users/straaten/predsets/objective_cv/tg-ex-q0.75-21D_ge7D_sep19-21_multi_d20_b1_predictors.h5'
-    #loadpath = '/nobackup/users/straaten/predsets/objective_cv/tg-ex-q0.75-21D_ge7D_sep12-15_multi_d20_b1_predictors.h5'
     loadpath = '/nobackup/users/straaten/predsets/objective_balanced_cv/tg-anom_JJA_45r1_31D-roll-mean_sep12-15_multi_d20_b3_predictors.h5'
-    #loadpath = '/nobackup/users/straaten/predsets/objective/tg-anom_JJA_45r1_31D-roll-mean_sep12-15_multi_d20_b1_predictors.h5'
     predictors = pd.read_hdf(loadpath, key = 'input').iloc[:,:15]
 
 
@@ -71,38 +68,39 @@ if not preload:
     """
     Semi-objective predictor selection
     """
-    # limiting X by j_measure
-    jfilter = filter_predictor_set(X_trainval, obs_trainval_bool, return_measures = False, nmost_important = 8, nbins=10)
-    # Also limiting by using a detrended target 
-    continuous_tg_name = 'books_paper3-1_tg-anom_JJA_45r1_14D-roll-mean_15-t2m-q095-adapted-mean.csv'
-    continuous_obs = read_raw_predictand(continuous_tg_name, clustid = 9, separation = leadtimepool)
-    continuous_obs = continuous_obs.reindex_like(X_trainval)
-    # Detrending
-    continuous_obs_detrended = pd.Series(detrend(continuous_obs.values), index = continuous_obs.index)
-    detrended_exceedence = continuous_obs_detrended > continuous_obs_detrended.quantile(0.75)
-    
-    jfilter_det = filter_predictor_set(X_trainval.reindex(continuous_obs.index), detrended_exceedence, return_measures = False, nmost_important = 8, nbins=10)
-    
-    
-    dynamic_cols = X_trainval.loc[:,['swvl4','swvl13','z','sst','z-reg']].columns
-    dynamic_cols = dynamic_cols[~dynamic_cols.get_loc_level(-1, 'clustid')[0]] # Throw away the unclassified regime
+    ## limiting X by j_measure
+    #jfilter = filter_predictor_set(X_trainval, obs_trainval_bool, return_measures = False, nmost_important = 8, nbins=10)
+    ## Also limiting by using a detrended target 
+    #continuous_tg_name = 'books_paper3-1_tg-anom_JJA_45r1_14D-roll-mean_15-t2m-q095-adapted-mean.csv'
+    #continuous_obs = read_raw_predictand(continuous_tg_name, clustid = 9, separation = leadtimepool)
+    #continuous_obs = continuous_obs.reindex_like(X_trainval)
+    ## Detrending
+    #continuous_obs_detrended = pd.Series(detrend(continuous_obs.values), index = continuous_obs.index)
+    #detrended_exceedence = continuous_obs_detrended > continuous_obs_detrended.quantile(0.75)
+    #
+    #jfilter_det = filter_predictor_set(X_trainval.reindex(continuous_obs.index), detrended_exceedence, return_measures = False, nmost_important = 8, nbins=10)
+    #
+    #
+    #dynamic_cols = X_trainval.loc[:,['swvl4','swvl13','z','sst','z-reg']].columns
+    #dynamic_cols = dynamic_cols[~dynamic_cols.get_loc_level(-1, 'clustid')[0]] # Throw away the unclassified regime
     #dynamic_cols = dynamic_cols[~dynamic_cols.get_loc_level('z-reg', 'variable')[0]] # Throw away all regimes
-    final_trainval = X_trainval.loc[:,jfilter.columns.union(jfilter_det.columns).union(dynamic_cols)]
+    #final_trainval = X_trainval.loc[:,jfilter.columns.union(jfilter_det.columns).union(dynamic_cols)]
     #final_trainval = X_trainval.loc[:,jfilter_det.columns.union(dynamic_cols)]
     #final_trainval = X_trainval.loc[:,jfilter.columns.union(dynamic_cols)]
     #final_trainval = X_trainval.loc[:,jfilter.columns.union(jfilter_det.columns)]
     #final_trainval = X_trainval.loc[:,dynamic_cols] #jfilter_det
     #final_trainval = jfilter_det
     #final_trainval = X_trainval.drop(dynamic_cols, axis = 1)
-    #final_trainval = X_trainval.loc[:,~X_trainval.columns.get_loc_level(-1, 'clustid')[0]] # Throw away the unclassified
+    final_trainval = X_trainval.loc[:,~X_trainval.columns.get_loc_level(-1, 'clustid')[0]] # Throw away the unclassified
+    #final_trainval = X_trainval.loc[:,~X_trainval.columns.get_loc_level('z-reg', 'variable')[0]] # Throw away all regimes
     
     """
-    optionally Saving for later
+    optionally Saving full set for later
     """
     #savedir = Path('/nobackup/users/straaten/predsets/full/')
-    #savedir = Path('/nobackup/users/straaten/predsets/preselected/')
-    #savename = f'tg-ex-q0.75-21D_ge{ndaythreshold}D_sep{leadtimepool[0]}-{leadtimepool[-1]}'
-    #savename = f'tg-anom_JJA_45r1_31D-roll-mean_sep{leadtimepool[0]}-{leadtimepool[-1]}'
+    ##savename = f'tg-ex-q0.75-21D_ge{ndaythreshold}D_sep{leadtimepool[0]}-{leadtimepool[-1]}'
+    ##savename = f'tg-anom_JJA_45r1_31D-roll-mean_sep{leadtimepool[0]}-{leadtimepool[-1]}'
+    #savename = f'regimes_z-anom_JJA_45r1_21D-frequency_sep{leadtimepool[0]}-{leadtimepool[-1]}'
     #predictors.loc[:,final_trainval.columns].to_hdf(savedir / f'{savename}_predictors.h5', key = 'input')
     #forc.to_hdf(savedir / f'{savename}_forc.h5', key = 'input')
     #obs.to_hdf(savedir / f'{savename}_obs.h5', key = 'target')
@@ -237,22 +235,18 @@ stats = pd.Series(stats)
 """
 danger zone
 """
-if crossval_scaling:
-    feature_input, feature_scaler = scale_other_features(final_trainval) 
-model = constructor.fresh_model()
-#val_time = slice('2015-01-01','2016-12-31',None)
-#valind = forc_trainval.index.get_loc_level(val_time,'time')[0]
-#trainind = ~valind
-#model.fit(x = [feature_input[trainind,:], raw_predictions[trainind,:]], y=obs_input[trainind,:], validation_data = ([feature_input[valind,:], raw_predictions[valind,:]], obs_input[valind,:]), **fit_kwargs)
-##fit_kwargs['shuffle'] = False
-#fit_kwargs['epochs'] = 20
-model.fit(x = [feature_input, raw_predictions], y=obs_input, validation_split = 0.4, **fit_kwargs)
-
-time_test = time_scaler.transform(obs_test.index.get_level_values('time').to_julian_date()[:,np.newaxis])
-feature_test = feature_scaler.transform(X_test)
-raw_test = multiclass_log_forecastprob(forc_test)
-score = model.evaluate([feature_test,raw_test],obs_test.values)
-test_pred = model.predict([feature_test,raw_test])
-train_pred = model.predict([feature_input, raw_predictions]) 
-print(np.mean((obs_test.iloc[:,focus_class] - forc_test.iloc[:,focus_class])**2))
-print(np.mean((obs_test.iloc[:,focus_class] - lr.predict(time_test))**2))
+#if crossval_scaling:
+#    feature_input, feature_scaler = scale_other_features(final_trainval) 
+#model = constructor.fresh_model()
+###fit_kwargs['shuffle'] = False
+##fit_kwargs['epochs'] = 20
+#model.fit(x = [feature_input, raw_predictions], y=obs_input, validation_split = 0.4, **fit_kwargs)
+#
+#time_test = time_scaler.transform(obs_test.index.get_level_values('time').to_julian_date()[:,np.newaxis])
+#feature_test = feature_scaler.transform(X_test)
+#raw_test = multiclass_log_forecastprob(forc_test)
+#score = model.evaluate([feature_test,raw_test],obs_test.values)
+#test_pred = model.predict([feature_test,raw_test])
+#train_pred = model.predict([feature_input, raw_predictions]) 
+#print(np.mean((obs_test.iloc[:,focus_class] - forc_test.iloc[:,focus_class])**2))
+#print(np.mean((obs_test.iloc[:,focus_class] - lr.predict(time_test))**2))
