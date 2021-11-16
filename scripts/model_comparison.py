@@ -21,7 +21,7 @@ target_region = 9
 ndaythreshold = 7 #[3,7] #7 #[4,9] Switch to list for multiclass (n>2) predictions
 focus_class = -1 # Index of the class to be scored and benchmarked through bss
 multi_eval = True # Single aggregated score or one per fold
-preload = True
+preload = False
 crossval = True
 balanced = True # Whether to use the balanced (hot dry years) version of crossvaldation. Folds are non-consecutive but still split by year. keyword ignored if crossval == False
 crossval_scaling = True # Wether to do also minmax scaling in cv mode
@@ -68,9 +68,9 @@ if not preload:
     """
     Semi-objective predictor selection
     """
-    ## limiting X by j_measure
-    #jfilter = filter_predictor_set(X_trainval, obs_trainval_bool, return_measures = False, nmost_important = 8, nbins=10)
-    ## Also limiting by using a detrended target 
+    # limiting X by j_measure
+    jfilter = filter_predictor_set(X_trainval, obs_trainval_bool, return_measures = False, nmost_important = 8, nbins=10)
+    # Also limiting by using a detrended target 
     #continuous_tg_name = 'books_paper3-1_tg-anom_JJA_45r1_14D-roll-mean_15-t2m-q095-adapted-mean.csv'
     #continuous_obs = read_raw_predictand(continuous_tg_name, clustid = 9, separation = leadtimepool)
     #continuous_obs = continuous_obs.reindex_like(X_trainval)
@@ -79,19 +79,19 @@ if not preload:
     #detrended_exceedence = continuous_obs_detrended > continuous_obs_detrended.quantile(0.75)
     #
     #jfilter_det = filter_predictor_set(X_trainval.reindex(continuous_obs.index), detrended_exceedence, return_measures = False, nmost_important = 8, nbins=10)
-    #
-    #
-    #dynamic_cols = X_trainval.loc[:,['swvl4','swvl13','z','sst','z-reg']].columns
-    #dynamic_cols = dynamic_cols[~dynamic_cols.get_loc_level(-1, 'clustid')[0]] # Throw away the unclassified regime
+    
+    
+    dynamic_cols = X_trainval.loc[:,['swvl4','swvl13','z','sst','z-reg']].columns
+    dynamic_cols = dynamic_cols[~dynamic_cols.get_loc_level(-1, 'clustid')[0]] # Throw away the unclassified regime
     #dynamic_cols = dynamic_cols[~dynamic_cols.get_loc_level('z-reg', 'variable')[0]] # Throw away all regimes
     #final_trainval = X_trainval.loc[:,jfilter.columns.union(jfilter_det.columns).union(dynamic_cols)]
     #final_trainval = X_trainval.loc[:,jfilter_det.columns.union(dynamic_cols)]
-    #final_trainval = X_trainval.loc[:,jfilter.columns.union(dynamic_cols)]
+    final_trainval = X_trainval.loc[:,jfilter.columns.union(dynamic_cols)]
     #final_trainval = X_trainval.loc[:,jfilter.columns.union(jfilter_det.columns)]
     #final_trainval = X_trainval.loc[:,dynamic_cols] #jfilter_det
     #final_trainval = jfilter_det
     #final_trainval = X_trainval.drop(dynamic_cols, axis = 1)
-    final_trainval = X_trainval.loc[:,~X_trainval.columns.get_loc_level(-1, 'clustid')[0]] # Throw away the unclassified
+    #final_trainval = X_trainval.loc[:,~X_trainval.columns.get_loc_level(-1, 'clustid')[0]] # Throw away the unclassified
     #final_trainval = X_trainval.loc[:,~X_trainval.columns.get_loc_level('z-reg', 'variable')[0]] # Throw away all regimes
     
     """
@@ -233,15 +233,23 @@ stats = pd.Series(stats)
 #classes,groups = generate_balanced_kfold(forc.loc[:,1], shuffle = True)
 
 """
-danger zone
+Check interpretation
 """
-#if crossval_scaling:
-#    feature_input, feature_scaler = scale_other_features(final_trainval) 
-#model = constructor.fresh_model()
+from Hybrid.interpretation import combine_input_output
+
+
+if crossval_scaling:
+    feature_input, feature_scaler = scale_other_features(final_trainval) 
+model = constructor.fresh_model()
 ###fit_kwargs['shuffle'] = False
 ##fit_kwargs['epochs'] = 20
-#model.fit(x = [feature_input, raw_predictions], y=obs_input, validation_split = 0.4, **fit_kwargs)
-#
+model.fit(x = [feature_input, raw_predictions], y=obs_input, validation_split = 0.4, **fit_kwargs)
+test = combine_input_output(model = model, feature_inputs = feature_input, log_of_raw = raw_predictions, target_class_index = -1, feature_names = None, index = final_trainval.index)
+test2 = combine_input_output(model = model, feature_inputs = feature_input, log_of_raw = raw_predictions, target_class_index = 0, feature_names = final_trainval.columns.to_flat_index(), index = final_trainval.index)
+
+"""
+danger zone
+"""
 #time_test = time_scaler.transform(obs_test.index.get_level_values('time').to_julian_date()[:,np.newaxis])
 #feature_test = feature_scaler.transform(X_test)
 #raw_test = multiclass_log_forecastprob(forc_test)
