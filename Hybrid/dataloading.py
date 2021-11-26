@@ -132,12 +132,11 @@ def annotate_raw_predictor(predictor: pd.DataFrame, variable: str, timeagg: int,
     predictor.columns = pd.MultiIndex.from_product([[variable], [timeagg], predictor.columns, [metric]], names = ['variable','timeagg','clustid','metric']) 
 
 
-def read_empirical_predictors(filepath: str, separation: int, timeagg: Union[int,slice,List[int]] = slice(None)):
+def read_empirical_predictors(filepath: str, separation: Union[int,slice,List[int]], timeagg: Union[int,slice,List[int]] = slice(None)):
     """
     Bulk read of all empirical predictors (multiple variables and clusters)
     Will be filtered later but optional to already select a subset of timeaggs 
     """
-    assert isinstance(separation, int) and (separation in [0,1,3,5,7,11,15,21,31]), 'Only a single separation can be loaded, as clustids are discontinuous over leadtimes, i.e. their locations differ.'
     df = pd.read_parquet(filepath)
     # We must read fold 4, because this is the only one not using a large part of our data for training.
     # Only one with a good possibility of testing in 2013-2019
@@ -147,6 +146,8 @@ def read_empirical_predictors(filepath: str, separation: int, timeagg: Union[int
     df.columns = df.columns.set_levels(-old_separations, level = 'separation')
     if isinstance(timeagg, int):
         timeagg = slice(timeagg,timeagg)
+    if isinstance(separation, int):
+        separation = [separation] #slice(separation,separation)
     df = df[4].loc[:,(slice(None),timeagg, separation)] # fold level will drop out
     return df.stack('separation')
 
@@ -190,26 +191,23 @@ def prepare_full_set(predictand_name, ndaythreshold: Union[List[int],int], predi
         dynamical_predictors.append(predictor)
     dynamical_predictors = pd.concat(dynamical_predictors, join = 'inner', axis = 1)
 
-    # Now comes the selection and potential duplication of empirical data
-    empiricalfile = '/nobackup_1/users/straaten/clusters_cv_spearmanpar_varalpha_strict/precursor.multiagg.parquet'
+    # Now comes the selection of data
     empirical_available_at = [0,1,3,5,7,11,15,21,31] # leadtime in days
     if isinstance(leadtimepool, list):
         """
-        Bit of a problem that we don't have the empirical predictors at all leadtimes.
-        Actually, the clustids don't correspond over the leadtimes (they can come into existence, or actually switch location).
-        So better load only one of the available and if we want to pool leadtimes for empirical then fill with persistent values (the chosen leadtime value for the date that dynamically is predicted with another leadtime in the leadtimepool)
+        In this case we're going to load a single lead time pattern which is projected to the others 
+        As the clustids don't correspond over the leadtimes (they can come into existence, or actually switch location).
         """
-        warnings.warn(f'Choosing a pool of leadtimes will duplicate empirical predictor values of a single from the available leadtimes {empirical_available_at}')
-        longest_shared_leadtime = max(set(empirical_available_at).intersection(leadtimepool))
-        warnings.warn(f'values from {longest_shared_leadtime} will be projected onto others in {leadtimepool}') 
+        longest_shared_leadtime = max(leadtimepool)
+        assert (longest_shared_leadtime in [15,21]), 'currently only 15 and 21 day lag patterns are projected to lower leadtimes. So pick 15 or 21 as the max in your leadtime pool'
+        empiricalfile = f'/nobackup_1/users/straaten/clusters_cv_spearmanpar_varalpha_strict/precursor.multiagg.-{longest_shared_leadtime}.parquet'
+        warnings.warn(f'picking values from pattern at {longest_shared_leadtime} which got projected onto the shorter leadtimes in {leadtimepool}') 
     else:
         assert leadtimepool in empirical_available_at, f'single chosen leadtime {leadtimepool} should be one of the empirically available: {empirical_available_at}'
-        longest_shared_leadtime = leadtimepool
+        empiricalfile = '/nobackup_1/users/straaten/clusters_cv_spearmanpar_varalpha_strict/precursor.multiagg.parquet'
 
-
-    empirical_set = read_empirical_predictors(empiricalfile, separation = longest_shared_leadtime) 
-    empirical_set.index = empirical_set.index.droplevel('separation') # A single separation is read so we can drop that and merge to dynamical (could mean suplication)
-    empirical_dynamical_set = dynamical_predictors.join(empirical_set, on = 'time', how = 'inner')
+    empirical_set = read_empirical_predictors(empiricalfile, separation = leadtimepool) 
+    empirical_dynamical_set = dynamical_predictors.join(empirical_set, how = 'left') # Empirical predictors cover more data
 
     # Adding climate indices, very long timeseries, so no outer or right join
     mjo = read_climate_index(filepath = '/nobackup/users/straaten/predsets/mjo_daily.h5', separation = leadtimepool)

@@ -208,7 +208,7 @@ def filter_predictor_set(predset: pd.DataFrame, observation: pd.Series, how: Cal
         for k in range(nbins):
             if (hist_y1 == k).sum() < min_samples_per_bin or (hist_y0 == k).sum() < min_samples_per_bin:
                 # We have too little in this bin in either y1 or y0, or both
-                print('too little in',k)
+                #print('too little in',k)
                 if k < (nbins - 1):
                     newval = k+1 # merge into one cluster higher
                 else: # if the last cluste we cannot shift upwards, so shift downwards to last maximum
@@ -283,7 +283,7 @@ def scale_other_features(df: Union[pd.DataFrame,np.ndarray], fitted_scaler: MinM
         fitted_scaler = MinMaxScaler() 
         scaled_input = fitted_scaler.fit_transform(df)
     else:
-        print('using a pre-fitted time scaler')
+        print('using a pre-fitted feature scaler')
         scaled_input = fitted_scaler.transform(df)
     return scaled_input, fitted_scaler
 

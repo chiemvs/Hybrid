@@ -12,7 +12,7 @@ from PermutationImportance.sequential_selection import sequential_forward_select
 sys.path.append(os.path.expanduser('~/Documents/Hybrid/'))
 from Hybrid.neuralnet import construct_modeldev_model, construct_climdev_model, earlystop, ConstructorAndCompiler
 from Hybrid.dataprep import test_trainval_split, multiclass_logistic_regression_coefficients, scale_other_features, multiclass_log_forecastprob, GroupedGenerator
-from Hybrid.optimization import multi_fit_single_eval
+from Hybrid.optimization import multi_fit_single_eval, multi_fit_multi_eval
 
 sys.path.append(os.path.expanduser('~/Documents/Weave/'))
 from Weave.utils import collapse_restore_multiindex
@@ -21,8 +21,9 @@ opendir = Path('/nobackup/users/straaten/predsets/full/')
 savedir = Path('/nobackup/users/straaten/predsets/objective_balanced_cv/')
 #opendir = Path('/scistor/ivm/jsn295/backup/predsets/full/')
 #savename = f'tg-ex-q0.75-21D_ge7D_sep19-21'
-savename = f'tg-ex-q0.75-21D_ge7D_sep12-15'
-#savename = f'tg-anom_JJA_45r1_31D-roll-mean_sep12-15'
+#savename = f'tg-ex-q0.75-21D_ge7D_sep12-15'
+#savename = f'tg-ex-q0.75-21D_ge5D_sep12-15'
+#savename = f'tg-anom_JJA_45r1_21D-roll-mean_q05_sep12-15'
 predictors = pd.read_hdf(opendir / f'{savename}_predictors.h5', key = 'input')
 forc = pd.read_hdf(opendir / f'{savename}_forc.h5', key = 'input')
 obs = pd.read_hdf(opendir / f'{savename}_obs.h5', key = 'target')
@@ -61,13 +62,13 @@ def score_model(training_data: Tuple[np.ndarray,np.ndarray], scoring_data: tuple
     n_predictors = feature_trainval.shape[-1]
     # Scaling the complexity with the amount of inputs to the model
     if n_predictors == 1:
-        nhidden = 0
-        nhidden_nodes = 2
-    elif n_predictors <= 4:
         nhidden = 1
-        nhidden_nodes = 2
+        nhidden_nodes = 2 
+    #elif n_predictors <= 4:
+    #    nhidden = 1
+    #    nhidden_nodes = 2
     else:
-        nhidden = 2
+        nhidden = 1
         nhidden_nodes = 4
 
     construct_kwargs = dict(n_classes = y_trainval.shape[-1], 
@@ -80,16 +81,18 @@ def score_model(training_data: Tuple[np.ndarray,np.ndarray], scoring_data: tuple
     constructor = ConstructorAndCompiler(construct_modeldev_model, construct_kwargs, compile_kwargs)
     
     fit_kwargs = dict(batch_size = 32, 
-            epochs = 200, 
+            epochs = 40, # 200
             shuffle = True,
-            callbacks = [earlystop(10)])
+            callbacks = [earlystop(7)])
 
     scores = np.repeat(np.nan, n_eval)
     for i in range(n_eval):  # Possibly later in parallel
         score, histories = multi_fit_single_eval(constructor, X_trainval = (feature_trainval, raw_predictions), y_trainval = y_trainval, generator = g, fit_kwargs = fit_kwargs, return_predictions = False, scale_cv_mode = crossval_scaling) # Scores with RPS
+    # for SingleGenerator nans are written in multi_fit_single_eval when doing only one fold. Therefore handled in the single_eval
+        #results = multi_fit_multi_eval(constructor, X_trainval = (feature_trainval, raw_predictions), y_trainval = y_trainval, generator = g, fit_kwargs = fit_kwargs, scale_cv_mode = crossval_scaling) # Scores with loss
+        #score = np.max(results.loc[(slice(None),'val'),:].values)
         g.reset()
         scores[i] = score
-    # for SingleGenerator nans are written in multi_fit_single_eval when doing only one fold. Therefore handled in the single_eval
     return scores.mean()
 
 
@@ -107,10 +110,12 @@ multipass = result.retrieve_multipass()
 
 # Writing out the selection and the whole predictor subset
 singleresult = pd.DataFrame(singlepass, index = ['rank','rps'])
-singleresult.to_csv(savedir / f'{savename}_single_b{n_eval}.csv')
+singleresult.to_csv(savedir / f'{savename}_single_d{depth}_b{n_eval}.csv')
 multiresult = pd.DataFrame(multipass, index = ['rank','rps'])
 multiresult.to_csv(savedir / f'{savename}_multi_d{depth}_b{n_eval}.csv')
 
-subset = predictors.iloc[:,newframe.columns.get_indexer(multiresult.columns)] # ordered by rank
-subset.to_hdf(savedir / f'{savename}_multi_d{depth}_b{n_eval}_predictors.h5', key = 'input')
+multisubset = predictors.iloc[:,newframe.columns.get_indexer(multiresult.columns)] # ordered by rank
+multisubset.to_hdf(savedir / f'{savename}_multi_d{depth}_b{n_eval}_predictors.h5', key = 'input')
 
+singlesubset = predictors.iloc[:,newframe.columns.get_indexer(singleresult.columns)] # ordered by rank
+singlesubset.to_hdf(savedir / f'{savename}_single_d{depth}_b{n_eval}_predictors.h5', key = 'input')
