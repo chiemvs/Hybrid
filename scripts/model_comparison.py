@@ -18,7 +18,7 @@ from Hybrid.dataloading import prepare_full_set, read_raw_predictand, read_tgano
 
 leadtimepool = list(range(12,16)) #list(range(12,16)) #list(range(19,22)) #[7,8,9,10,11,12,13] #[10,11,12,13,14,15] #[15,16,17,18,19,20,21] # From the longest leadtimepool is taken
 target_region = 9 
-ndaythreshold = 7 #[3,7] #7 #[4,9] Switch to list for multiclass (n>2) predictions
+ndaythreshold = 5 #[3,7] #7 #[4,9] Switch to list for multiclass (n>2) predictions
 focus_class = -1 # Index of the class to be scored and benchmarked through bss
 multi_eval = True # Single aggregated score or one per fold
 preload = False
@@ -32,13 +32,18 @@ nfolds = 3
 targetname = 'books_paper3-2_tg-ex-q0.75-21D_JJA_45r1_1D_15-t2m-q095-adapted-mean.csv'
 predictors, forc, obs = prepare_full_set(targetname, ndaythreshold = ndaythreshold, predictand_cluster = target_region, leadtimepool = leadtimepool)
 if preload: # For instance a predictor set coming from 
-    #loadpath = '/nobackup/users/straaten/predsets/objective_balanced_cv/no_pdomjo/tg-ex-q0.75-21D_ge7D_sep12-15_multi_d20_b3_predictors.h5'
-    loadpath = '/nobackup/users/straaten/predsets/objective_balanced_cv/no_pdomjo/tg-anom_JJA_45r1_31D-roll-mean_sep12-15_multi_d20_b3_predictors.h5'
-    predictors = pd.read_hdf(loadpath, key = 'input').iloc[:,:15]
+    #loadpath = '/nobackup/users/straaten/predsets/objective_balanced_cv/tg-ex-q0.75-21D_ge7D_sep12-15_multi_d20_b3_predictors.h5'
+    #loadpath = '/nobackup/users/straaten/predsets/objective_balanced_cv/tg-ex-q0.75-21D_ge5D_sep12-15_multi_d20_b3_predictors.h5'
+    #loadpath = '/nobackup/users/straaten/predsets/objective_balanced_cv/tg-anom_JJA_45r1_21D-roll-mean_q05_sep12-15_single_d20_b3_predictors.h5'
+    #loadpath = '/nobackup/users/straaten/predsets/objective_balanced_cv/no_pdomjo/tg-anom_JJA_45r1_31D-roll-mean_sep12-15_multi_d20_b3_predictors.h5'
+    #loadpath = '/nobackup/users/straaten/predsets/objective_balanced_cv/emp_duplicated/tg-anom_JJA_45r1_31D-roll-mean_sep12-15_multi_d15_b3_predictors.h5'
+    #loadpath = '/nobackup/users/straaten/predsets/objective_balanced_cv/tg-anom_JJA_45r1_31D-roll-mean_q05_sep12-15_multi_d20_b3_predictors.h5'
+    loadpath = '/nobackup/users/straaten/predsets/objective_balanced_cv/tg-anom_JJA_45r1_31D-roll-mean_q075_sep12-15_multi_d20_b3_predictors.h5'
+    predictors = pd.read_hdf(loadpath, key = 'input').iloc[:,:16]
 
 
 """
-Predictand replacement with tg-anom, 21D > q0.5
+Predictand replacement with tg-anom, 21D > q0.5, or 31D > [q0.5,q0.75]
 Quite involved because thresholds need to be matched
 """
 #tganom_name = 'books_paper3-1_tg-anom_JJA_45r1_21D-roll-mean_15-t2m-q095-adapted-mean.csv'
@@ -70,7 +75,7 @@ if not preload:
     Semi-objective predictor selection
     """
     # limiting X by j_measure
-    #jfilter = filter_predictor_set(X_trainval, obs_trainval_bool, return_measures = False, nmost_important = 8, nbins=10)
+    jfilter = filter_predictor_set(X_trainval, obs_trainval_bool, return_measures = False, nmost_important = 8, nbins=10)
     # Also limiting by using a detrended target 
     #continuous_tg_name = 'books_paper3-1_tg-anom_JJA_45r1_14D-roll-mean_15-t2m-q095-adapted-mean.csv'
     #continuous_obs = read_raw_predictand(continuous_tg_name, clustid = 9, separation = leadtimepool)
@@ -89,23 +94,24 @@ if not preload:
     #final_trainval = X_trainval.loc[:,jfilter_det.columns.union(dynamic_cols)]
     #mjo_cols = X_trainval.loc[:,['mjo']].columns
     #final_trainval = X_trainval.loc[:,jfilter.columns.union(dynamic_cols).union(mjo_cols)]
-    #final_trainval = X_trainval.loc[:,jfilter.columns.union(dynamic_cols)]
+    final_trainval = X_trainval.loc[:,jfilter.columns.union(dynamic_cols)]
     #final_trainval = X_trainval.loc[:,jfilter.columns.union(jfilter_det.columns)]
     #final_trainval = X_trainval.loc[:,dynamic_cols] #jfilter_det
     #final_trainval = jfilter_det
     #final_trainval = X_trainval.drop(dynamic_cols, axis = 1)
-    final_trainval = X_trainval.loc[:,~X_trainval.columns.get_loc_level(-1, 'clustid')[0]] # Throw away the unclassified
+    #final_trainval = X_trainval.loc[:,~X_trainval.columns.get_loc_level(-1, 'clustid')[0]] # Throw away the unclassified
     #final_trainval = X_trainval.loc[:,~X_trainval.columns.get_loc_level('z-reg', 'variable')[0]] # Throw away all regimes
     #final_trainval = jfilter
-    #final_trainval = X_trainval.loc[:,[('snowc_nhmin', 31, 2, 'spatcov'),('sst_nhplus', 21, 4, 'spatcov'),('swvl4', 21, 1, 'mean'),('swvl4_europe', 11, 0,'spatcov')]]
-    final_trainval = X_trainval.loc[:,[('sst_nhplus', 21, 4, 'spatcov')]]
+    #final_trainval = X_trainval.loc[:,[('sst_nhplus', 5, 1, 'mean'),('sst_nhplus', 21, 4, 'spatcov'),('z', 21, 1, 'mean'),('t850_nhblock', 21, 0,'mean'),('t850_nhblock', 15, 1,'mean'),('snowc_nhmin', 21, 1,'spatcov')]]
+    #final_trainval = X_trainval.loc[:,[('sst_nhplus', 5, 1, 'mean'),('sst_nhplus', 21, 4, 'spatcov'),('z', 21, 1, 'mean'),('snowc_nhmin', 21, 1,'spatcov')]]
     
     """
     optionally Saving full set for later
     """
-    #savedir = Path('/nobackup/users/straaten/predsets/full/')
-    ##savename = f'tg-ex-q0.75-21D_ge{ndaythreshold}D_sep{leadtimepool[0]}-{leadtimepool[-1]}'
+    #savedir = Path('/nobackup/users/straaten/predsets/jmeasure/')
+    #savename = f'tg-ex-q0.75-21D_ge{ndaythreshold}D_sep{leadtimepool[0]}-{leadtimepool[-1]}_jmeasure-dyn'
     ##savename = f'tg-anom_JJA_45r1_21D-roll-mean_q05_sep{leadtimepool[0]}-{leadtimepool[-1]}'
+    ##savename = f'tg-anom_JJA_45r1_31D-roll-mean_q05_sep{leadtimepool[0]}-{leadtimepool[-1]}'
     ##savename = f'regimes_z-anom_JJA_45r1_21D-frequency_sep{leadtimepool[0]}-{leadtimepool[-1]}'
     #predictors.loc[:,final_trainval.columns].to_hdf(savedir / f'{savename}_predictors.h5', key = 'input')
     #forc.to_hdf(savedir / f'{savename}_forc.h5', key = 'input')
@@ -127,26 +133,26 @@ obs_input = obs_trainval.copy().values
 """
 Test the climdev keras 
 """
-#construct_kwargs = dict(n_classes = obs_trainval.shape[-1], 
-#        n_hidden_layers= 1, 
-#        n_features = final_trainval.shape[-1],
-#        climprobkwargs = climprobkwargs)
-#
-#compile_kwargs = dict(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001), 
-#        metrics = ['accuracy',BrierScore(class_index = focus_class)])
-#
-#constructor = ConstructorAndCompiler(construct_climdev_model, construct_kwargs, compile_kwargs)
-#
-#fit_kwargs = dict(batch_size = 32, epochs = 200, callbacks = [earlystop(10)])
-##fit_kwargs = dict(batch_size = 32, epochs = 15)
-#
-#if multi_eval:
-#    results = multi_fit_multi_eval(constructor, X_trainval = (feature_input, time_input), y_trainval = obs_input, generator = generator, fit_kwargs = fit_kwargs)
-#    results.columns = ['crossentropy','accuracy','brier'] # coould potentially also be inside the multi_eval, but difficult to get names from the mixture of strings and other
-#else:
-#    score, predictions = multi_fit_single_eval(constructor, X_trainval = (feature_input, time_input), y_trainval = obs_input, generator = generator, fit_kwargs = fit_kwargs, return_predictions = True)
-#
-#generator.reset()
+construct_kwargs = dict(n_classes = obs_trainval.shape[-1], 
+        n_hidden_layers= 1, 
+        n_features = final_trainval.shape[-1],
+        n_hiddenlayer_nodes = 5,
+        climprobkwargs = climprobkwargs)
+
+compile_kwargs = dict(optimizer=tf.keras.optimizers.Adam(learning_rate=0.0014), 
+        metrics = ['accuracy',BrierScore(class_index = focus_class)])
+
+constructor2 = ConstructorAndCompiler(construct_climdev_model, construct_kwargs, compile_kwargs)
+
+fit_kwargs = dict(batch_size = 32, epochs = 40, shuffle = True, callbacks = [earlystop(patience = 7, monitor = 'val_loss')])
+
+if multi_eval:
+    results2 = multi_fit_multi_eval(constructor2, X_trainval = (feature_input, time_input), y_trainval = obs_input, generator = generator, fit_kwargs = fit_kwargs, scale_cv_mode = crossval_scaling)
+    results2.columns = ['crossentropy','accuracy','brier'] # coould potentially also be inside the multi_eval, but difficult to get names from the mixture of strings and other
+else:
+    score2, predictions = multi_fit_single_eval(constructor2, X_trainval = (feature_input, time_input), y_trainval = obs_input, generator = generator, fit_kwargs = fit_kwargs, return_predictions = True, scale_cv_mode = crossval_scaling)
+
+generator.reset()
 
 """
 Test the modeldev keras
@@ -156,14 +162,14 @@ raw_predictions = multiclass_log_forecastprob(forc_trainval)
 construct_kwargs = dict(n_classes = obs_trainval.shape[-1], 
         n_hidden_layers= 1, 
         n_features = final_trainval.shape[-1],
-        n_hiddenlayer_nodes = 1)
+        n_hiddenlayer_nodes = 5)
 
-compile_kwargs = dict(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001), 
+compile_kwargs = dict(optimizer=tf.keras.optimizers.Adam(learning_rate=0.0014), 
         metrics = ['accuracy',BrierScore(class_index = focus_class)])
 
 constructor = ConstructorAndCompiler(construct_modeldev_model, construct_kwargs, compile_kwargs)
 
-fit_kwargs = dict(batch_size = 32, epochs = 200, shuffle = True, callbacks = [earlystop(patience = 10, monitor = 'val_loss')])
+fit_kwargs = dict(batch_size = 32, epochs = 40, shuffle = True, callbacks = [earlystop(patience = 7, monitor = 'val_loss')])
 
 if multi_eval:
     results = multi_fit_multi_eval(constructor, X_trainval = (feature_input, raw_predictions), y_trainval = obs_input, generator = generator, fit_kwargs = fit_kwargs, scale_cv_mode = crossval_scaling)
@@ -253,7 +259,7 @@ if crossval_scaling:
 model = constructor.fresh_model()
 ###fit_kwargs['shuffle'] = False
 ##fit_kwargs['epochs'] = 20
-model.fit(x = [feature_input, raw_predictions], y=obs_input, validation_split = 0.4, **fit_kwargs)
+model.fit(x = [feature_input, raw_predictions], y=obs_input, validation_split = 0.33, **fit_kwargs)
 test = combine_input_output(model = model, feature_inputs = feature_input, log_of_raw = raw_predictions, target_class_index = -1, feature_names = None, index = final_trainval.index)
 test2 = combine_input_output(model = model, feature_inputs = feature_input, log_of_raw = raw_predictions, target_class_index = 0, feature_names = final_trainval.columns.to_flat_index(), index = final_trainval.index)
 
@@ -264,12 +270,12 @@ danger zone
 #obs_test = obs_test.loc[(slice(None),15),:] 
 #X_test = X_test.loc[(slice(None),15),:] 
 #forc_test = forc_test.loc[(slice(None),15),:] 
-### 
-#time_test = time_scaler.transform(obs_test.index.get_level_values('time').to_julian_date()[:,np.newaxis])
-#feature_test = feature_scaler.transform(X_test.loc[:,final_trainval.columns])
-#raw_test = multiclass_log_forecastprob(forc_test)
-#score = model.evaluate([feature_test,raw_test],obs_test.values)
-#test_pred = model.predict([feature_test,raw_test])
-#train_pred = model.predict([feature_input, raw_predictions]) 
-#print(np.mean((obs_test.iloc[:,focus_class] - forc_test.iloc[:,focus_class])**2))
-#print(np.mean((obs_test.iloc[:,focus_class] - lr.predict(time_test))**2))
+## 
+time_test = time_scaler.transform(obs_test.index.get_level_values('time').to_julian_date()[:,np.newaxis])
+feature_test = feature_scaler.transform(X_test.loc[:,final_trainval.columns])
+raw_test = multiclass_log_forecastprob(forc_test)
+score = model.evaluate([feature_test,raw_test],obs_test.values)
+test_pred = model.predict([feature_test,raw_test])
+train_pred = model.predict([feature_input, raw_predictions]) 
+print(np.mean((obs_test.iloc[:,focus_class] - forc_test.iloc[:,focus_class])**2))
+print(np.mean((obs_test.iloc[:,focus_class] - lr.predict(time_test))**2))

@@ -14,18 +14,20 @@ from Hybrid.dataprep import test_trainval_split, multiclass_logistic_regression_
 from Hybrid.optimization import multi_fit_single_eval
 
 """
-Reading in pre-selected predictor sets 
+Reading in pre-selected predictor sets (either sequential or jmeasure).
 and preconstructed targets
 """
-targetname = 'tg-ex-q0.75-21D_ge7D_sep19-21'
-selection = 'multi_d20_b3'
+#targetname = 'tg-ex-q0.75-21D_ge5D_sep12-15'
+#selection = 'multi_d20_b3'
+selection = 'jmeasure-dyn'
 basedir = Path('/nobackup/users/straaten')
 savedir = basedir / f'hyperparams/{targetname}_{selection}'
 if savedir.exists():
     raise ValueError(f'hyperparam directory {savedir} already exists. Overwriting prevented. Check its content.')
 else:
     savedir.mkdir()
-predictordir = basedir / 'predsets/objective_balanced_cv/' # Objectively selected predictors
+#predictordir = basedir / 'predsets/objective_balanced_cv/' # Objectively sequential selected predictors
+predictordir = basedir / 'predsets/jmeasure/' # Objectively jmeasure selected predictors
 for_obs_dir = basedir / 'predsets/full/' # contains corresponding forcasts and observations
 
 predictors = pd.read_hdf(predictordir / f'{targetname}_{selection}_predictors.h5', key = 'input')
@@ -54,15 +56,15 @@ Hyperparam optimization
 """
 
 parameters = [sherpa.Continuous(name='lr', range=[0.0003, 0.002]),
-              sherpa.Discrete(name='earlystop_patience', range=[5, 20]),
+              sherpa.Discrete(name='earlystop_patience', range=[2, 11]),
               sherpa.Ordinal(name='batch_size', range=[16, 32, 64]),
-              sherpa.Discrete(name='n_hidden_layers', range=[1,4]),
-              sherpa.Discrete(name='n_hiddenlayer_nodes', range=[4,10])] #sherpa.Choice(name='activation', range=['relu', 'elu'])
+              sherpa.Discrete(name='n_hidden_layers', range=[1,3]),
+              sherpa.Discrete(name='n_hiddenlayer_nodes', range=[2,8])] #sherpa.Choice(name='activation', range=['relu', 'elu'])
 
 algorithm = sherpa.algorithms.RandomSearch(max_num_trials=200)
 study = sherpa.Study(parameters=parameters,
                      dashboard_port=8888,
-                     disable_dashboard=False,
+                     disable_dashboard=True,
                      output_dir= savedir ,
                      algorithm=algorithm,
                      lower_is_better=True)

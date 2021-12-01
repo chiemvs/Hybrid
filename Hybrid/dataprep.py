@@ -36,7 +36,7 @@ def categorize_hotday_predictand(df: Union[pd.Series, pd.DataFrame], lower_split
         return pd.Series(vals, index = df.index), bounds
     elif isinstance(df, pd.DataFrame):
         returns = pd.DataFrame(np.nan, index = df.index, columns = bounds.index)
-        alpha = 0.9 #1/3 
+        alpha = 1/3 
         warnings.warn(f'using alpha {alpha} for forecast categorization')
         n_positions = df.shape[-1] + 1
         for categoryid in bounds.index:
