@@ -24,6 +24,7 @@ savedir = Path('/nobackup/users/straaten/predsets/objective_balanced_cv/')
 #savename = f'tg-ex-q0.75-21D_ge7D_sep12-15'
 #savename = f'tg-ex-q0.75-21D_ge5D_sep12-15'
 #savename = f'tg-anom_JJA_45r1_21D-roll-mean_q05_sep12-15'
+#savename = f'tg-anom_JJA_45r1_21D-roll-mean_q075_sep12-15'
 #savename = f'tg-anom_JJA_45r1_31D-roll-mean_q05_sep12-15'
 #savename = f'tg-anom_JJA_45r1_31D-roll-mean_q075_sep12-15'
 predictors = pd.read_hdf(opendir / f'{savename}_predictors.h5', key = 'input')

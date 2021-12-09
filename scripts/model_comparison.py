@@ -18,15 +18,14 @@ from Hybrid.dataloading import prepare_full_set, read_raw_predictand, read_tgano
 
 leadtimepool = list(range(12,16)) #list(range(12,16)) #list(range(19,22)) #[7,8,9,10,11,12,13] #[10,11,12,13,14,15] #[15,16,17,18,19,20,21] # From the longest leadtimepool is taken
 target_region = 9 
-ndaythreshold = 5 #[3,7] #7 #[4,9] Switch to list for multiclass (n>2) predictions
+ndaythreshold = 9 #[3,7] #7 #[4,9] Switch to list for multiclass (n>2) predictions
 focus_class = -1 # Index of the class to be scored and benchmarked through bss
 multi_eval = True # Single aggregated score or one per fold
-preload = False
+preload = True
 crossval = True
 balanced = True # Whether to use the balanced (hot dry years) version of crossvaldation. Folds are non-consecutive but still split by year. keyword ignored if crossval == False
 crossval_scaling = True # Wether to do also minmax scaling in cv mode
 nfolds = 3
-#targetname = 'books_paper3-2_tg-ex-q0.75-21D_JJA_45r1_1D_0.01-t2m-grid-mean.csv' 
 #targetname = 'books_paper3-2_tg-ex-q0.75-7D_JJA_45r1_1D_15-t2m-q095-adapted-mean.csv'
 #targetname = 'books_paper3-2_tg-ex-q0.75-14D_JJA_45r1_1D_15-t2m-q095-adapted-mean.csv'
 targetname = 'books_paper3-2_tg-ex-q0.75-21D_JJA_45r1_1D_15-t2m-q095-adapted-mean.csv'
@@ -34,24 +33,27 @@ predictors, forc, obs = prepare_full_set(targetname, ndaythreshold = ndaythresho
 if preload: # For instance a predictor set coming from 
     #loadpath = '/nobackup/users/straaten/predsets/objective_balanced_cv/tg-ex-q0.75-21D_ge7D_sep12-15_multi_d20_b3_predictors.h5'
     #loadpath = '/nobackup/users/straaten/predsets/objective_balanced_cv/tg-ex-q0.75-21D_ge5D_sep12-15_multi_d20_b3_predictors.h5'
-    #loadpath = '/nobackup/users/straaten/predsets/objective_balanced_cv/tg-anom_JJA_45r1_21D-roll-mean_q05_sep12-15_single_d20_b3_predictors.h5'
+    #loadpath = '/nobackup/users/straaten/predsets/objective_balanced_cv/tg-anom_JJA_45r1_21D-roll-mean_q075_sep12-15_multi_d20_b3_predictors.h5'
+    #loadpath = '/nobackup/users/straaten/predsets/objective_balanced_cv/tg-anom_JJA_45r1_21D-roll-mean_q05_sep12-15_multi_d20_b3_predictors.h5'
+    #loadpath = '/nobackup/users/straaten/predsets/objective_balanced_cv/tg-anom_JJA_45r1_31D-roll-mean_q075_sep12-15_multi_d20_b3_predictors.h5'
+    loadpath = '/nobackup/users/straaten/predsets/objective_balanced_cv/tg-anom_JJA_45r1_31D-roll-mean_q05_sep12-15_multi_d20_b3_predictors.h5'
+    #loadpath = '/nobackup/users/straaten/predsets/objective_balanced_cv/nonsmooth/tg-anom_JJA_45r1_31D-roll-mean_q075_sep12-15_multi_d20_b3_predictors.h5'
     #loadpath = '/nobackup/users/straaten/predsets/objective_balanced_cv/no_pdomjo/tg-anom_JJA_45r1_31D-roll-mean_sep12-15_multi_d20_b3_predictors.h5'
-    #loadpath = '/nobackup/users/straaten/predsets/objective_balanced_cv/emp_duplicated/tg-anom_JJA_45r1_31D-roll-mean_sep12-15_multi_d15_b3_predictors.h5'
-    #loadpath = '/nobackup/users/straaten/predsets/objective_balanced_cv/tg-anom_JJA_45r1_31D-roll-mean_q05_sep12-15_multi_d20_b3_predictors.h5'
-    loadpath = '/nobackup/users/straaten/predsets/objective_balanced_cv/tg-anom_JJA_45r1_31D-roll-mean_q075_sep12-15_multi_d20_b3_predictors.h5'
-    predictors = pd.read_hdf(loadpath, key = 'input').iloc[:,:16]
+    predictors = pd.read_hdf(loadpath, key = 'input').iloc[:,:4]
 
 
 """
-Predictand replacement with tg-anom, 21D > q0.5, or 31D > [q0.5,q0.75]
+Predictand replacement with tg-anom, [21D, 31D] > [q0.5,q0.75]
 Quite involved because thresholds need to be matched
 """
-#tganom_name = 'books_paper3-1_tg-anom_JJA_45r1_21D-roll-mean_15-t2m-q095-adapted-mean.csv'
-#climname = 'tg-anom_clim_1998-06-07_2019-10-31_21D-roll-mean_15-t2m-q095-adapted-mean_5_5_q0.5'
-#modelclimname = 'tg-anom_45r1_1998-06-07_2019-08-31_21D-roll-mean_15-t2m-q095-adapted-mean_5_5_q0.5'
-#
-#tgobs, tgforc = read_tganom_predictand(booksname = tganom_name, clustid = target_region, separation = leadtimepool, climname = climname, modelclimname = modelclimname) 
-#forc, obs = tgforc.loc[forc.index,:], tgobs.loc[forc.index,:]
+quantile = 0.5
+timeagg = 31
+tganom_name = f'books_paper3-1_tg-anom_JJA_45r1_{timeagg}D-roll-mean_15-t2m-q095-adapted-mean.csv'
+climname = f'tg-anom_clim_1998-06-07_2019-10-31_{timeagg}D-roll-mean_15-t2m-q095-adapted-mean_15_15_q{quantile}'
+modelclimname = f'tg-anom_45r1_1998-06-07_2019-08-31_21D-roll-mean_15-t2m-q095-adapted-mean_15_15_q{quantile}'
+
+tgobs, tgforc = read_tganom_predictand(booksname = tganom_name, clustid = target_region, separation = leadtimepool, climname = climname, modelclimname = modelclimname) 
+forc, obs = tgforc.loc[forc.index,:], tgobs.loc[forc.index,:]
 
 
 """
@@ -108,11 +110,11 @@ if not preload:
     """
     optionally Saving full set for later
     """
-    #savedir = Path('/nobackup/users/straaten/predsets/jmeasure/')
-    #savename = f'tg-ex-q0.75-21D_ge{ndaythreshold}D_sep{leadtimepool[0]}-{leadtimepool[-1]}_jmeasure-dyn'
-    ##savename = f'tg-anom_JJA_45r1_21D-roll-mean_q05_sep{leadtimepool[0]}-{leadtimepool[-1]}'
-    ##savename = f'tg-anom_JJA_45r1_31D-roll-mean_q05_sep{leadtimepool[0]}-{leadtimepool[-1]}'
-    ##savename = f'regimes_z-anom_JJA_45r1_21D-frequency_sep{leadtimepool[0]}-{leadtimepool[-1]}'
+    #savedir = Path('/nobackup/users/straaten/predsets/full/')
+    ##savename = f'tg-ex-q0.75-21D_ge{ndaythreshold}D_sep{leadtimepool[0]}-{leadtimepool[-1]}'
+    ##savename = f'tg-anom_JJA_45r1_21D-roll-mean_q075_sep{leadtimepool[0]}-{leadtimepool[-1]}'
+    #savename = f'tg-anom_JJA_45r1_31D-roll-mean_q05_sep{leadtimepool[0]}-{leadtimepool[-1]}'
+    ###savename = f'regimes_z-anom_JJA_45r1_21D-frequency_sep{leadtimepool[0]}-{leadtimepool[-1]}'
     #predictors.loc[:,final_trainval.columns].to_hdf(savedir / f'{savename}_predictors.h5', key = 'input')
     #forc.to_hdf(savedir / f'{savename}_forc.h5', key = 'input')
     #obs.to_hdf(savedir / f'{savename}_obs.h5', key = 'target')
@@ -146,13 +148,13 @@ constructor2 = ConstructorAndCompiler(construct_climdev_model, construct_kwargs,
 
 fit_kwargs = dict(batch_size = 32, epochs = 40, shuffle = True, callbacks = [earlystop(patience = 7, monitor = 'val_loss')])
 
-if multi_eval:
-    results2 = multi_fit_multi_eval(constructor2, X_trainval = (feature_input, time_input), y_trainval = obs_input, generator = generator, fit_kwargs = fit_kwargs, scale_cv_mode = crossval_scaling)
-    results2.columns = ['crossentropy','accuracy','brier'] # coould potentially also be inside the multi_eval, but difficult to get names from the mixture of strings and other
-else:
-    score2, predictions = multi_fit_single_eval(constructor2, X_trainval = (feature_input, time_input), y_trainval = obs_input, generator = generator, fit_kwargs = fit_kwargs, return_predictions = True, scale_cv_mode = crossval_scaling)
-
-generator.reset()
+#if multi_eval:
+#    results2 = multi_fit_multi_eval(constructor2, X_trainval = (feature_input, time_input), y_trainval = obs_input, generator = generator, fit_kwargs = fit_kwargs, scale_cv_mode = crossval_scaling)
+#    results2.columns = ['crossentropy','accuracy','brier'] # coould potentially also be inside the multi_eval, but difficult to get names from the mixture of strings and other
+#else:
+#    score2, predictions = multi_fit_single_eval(constructor2, X_trainval = (feature_input, time_input), y_trainval = obs_input, generator = generator, fit_kwargs = fit_kwargs, return_predictions = True, scale_cv_mode = crossval_scaling)
+#
+#generator.reset()
 
 """
 Test the modeldev keras
@@ -251,7 +253,7 @@ stats = pd.Series(stats)
 """
 Check interpretation
 """
-from Hybrid.interpretation import combine_input_output
+#from Hybrid.interpretation import combine_input_output
 
 
 if crossval_scaling:
@@ -260,13 +262,16 @@ model = constructor.fresh_model()
 ###fit_kwargs['shuffle'] = False
 ##fit_kwargs['epochs'] = 20
 model.fit(x = [feature_input, raw_predictions], y=obs_input, validation_split = 0.33, **fit_kwargs)
-test = combine_input_output(model = model, feature_inputs = feature_input, log_of_raw = raw_predictions, target_class_index = -1, feature_names = None, index = final_trainval.index)
-test2 = combine_input_output(model = model, feature_inputs = feature_input, log_of_raw = raw_predictions, target_class_index = 0, feature_names = final_trainval.columns.to_flat_index(), index = final_trainval.index)
+#test = combine_input_output(model = model, feature_inputs = feature_input, log_of_raw = raw_predictions, target_class_index = -1, feature_names = None, index = final_trainval.index)
+#test2 = combine_input_output(model = model, feature_inputs = feature_input, log_of_raw = raw_predictions, target_class_index = 0, feature_names = final_trainval.columns.to_flat_index(), index = final_trainval.index)
+
+climmodel = constructor2.fresh_model()
+climmodel.fit(x = [feature_input, time_input], y=obs_input, validation_split = 0.33, **fit_kwargs)
 
 """
 danger zone
 """
-### only one leadtime.
+## only one leadtime.
 #obs_test = obs_test.loc[(slice(None),15),:] 
 #X_test = X_test.loc[(slice(None),15),:] 
 #forc_test = forc_test.loc[(slice(None),15),:] 
@@ -275,7 +280,11 @@ time_test = time_scaler.transform(obs_test.index.get_level_values('time').to_jul
 feature_test = feature_scaler.transform(X_test.loc[:,final_trainval.columns])
 raw_test = multiclass_log_forecastprob(forc_test)
 score = model.evaluate([feature_test,raw_test],obs_test.values)
+climmodel_score = climmodel.evaluate([feature_test,time_test], obs_test.values)
 test_pred = model.predict([feature_test,raw_test])
 train_pred = model.predict([feature_input, raw_predictions]) 
-print(np.mean((obs_test.iloc[:,focus_class] - forc_test.iloc[:,focus_class])**2))
-print(np.mean((obs_test.iloc[:,focus_class] - lr.predict(time_test))**2))
+print(f'model: {score[-1]}')
+print(f'climmodel: {climmodel_score[-1]}')
+print('raw:', np.mean((obs_test.iloc[:,focus_class] - forc_test.iloc[:,focus_class])**2))
+print('trend:', np.mean((obs_test.iloc[:,focus_class] - lr.predict(time_test))**2))
+print('BSS:', 1- score[-1]/np.mean((obs_test.iloc[:,focus_class] - forc_test.iloc[:,focus_class])**2))
