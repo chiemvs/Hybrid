@@ -1,8 +1,14 @@
+import sys
+import os
 import numpy as np
 import pandas as pd
 import tensorflow as tf
+from sklearn.metrics import pairwise_distances
 
 from typing import Callable, Union, List
+
+sys.path.append(os.path.expanduser('~/Documents/Weave/'))
+from Weave.clustering import Clustering
 
 def model_to_submodel(model: tf.keras.Model, exp_of_log_of_multiplier: bool = False) -> tf.keras.Model:
     """
@@ -57,6 +63,24 @@ def gradient(model: tf.keras.Model, feature_inputs: np.ndarray, target_fn: Calla
     else:
         return grad
 
+def kernel_shap(model: tf.keras.Model, feature_inputs: np.ndarray, target_class: int = -1, additional_inputs: np.ndarray = None):
+    """
+    Employ model agnostic Kernel Shap. 
+    """
+    explainer = shap.KernelExplainer(svm.predict_proba, X_train, link="logit")
+    shap_values = explainer.shap_values(X_test, nsamples=100)
+
+def order_by_hierachical_clustering(explanations: pd.DataFrame) -> pd.DataFrame:
+    """
+    Explanations are (n_samples, n_features), returns a reordered version of the frame
+    """
+    assert isinstance(explanations, pd.DataFrame),'Only indexed frames are allowed, otherwise shuffling loses the timestamp'
+    cl = Clustering()
+    cl.prepare_for_distance_algorithm(array = explanations.values.T) # N_features, nsamples
+    cl.call_distance_algorithm(func = pairwise_distances, kwargs = {'metric':'euclidean'})
+    leaforder = cl.clustering(clusterclass = None, kwargs = {'optimal_ordering':True})
+    return explanations.iloc[leadorder.squeeze(),:]
+    
 def wrap_crossentropy(pred: tf.Tensor, y_true: tf.Tensor):
     """
     Wrap crossentropy such that the prediction can come as first argument (probabilistic prediction)
