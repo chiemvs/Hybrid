@@ -3,9 +3,15 @@ import os
 import numpy as np
 import pandas as pd
 import tensorflow as tf
-from sklearn.metrics import pairwise_distances
 
+from sklearn.metrics import pairwise_distances
 from typing import Callable, Union, List
+from types import MethodType
+
+try:
+    import shap
+except ImportError:
+    pass
 
 sys.path.append(os.path.expanduser('~/Documents/Weave/'))
 from Weave.clustering import Clustering
@@ -63,12 +69,36 @@ def gradient(model: tf.keras.Model, feature_inputs: np.ndarray, target_fn: Calla
     else:
         return grad
 
-def kernel_shap(model: tf.keras.Model, feature_inputs: np.ndarray, target_class: int = -1, additional_inputs: np.ndarray = None):
+def kernel_shap(model: tf.keras.Model, feature_inputs: np.ndarray, to_explain: slice = slice(None), additional_inputs: np.ndarray = None, target_class: int = slice(None)) -> Union[List[np.ndarray], np.ndarray]:
     """
-    Employ model agnostic Kernel Shap. 
+    Employ model agnostic Kernel Shap, to provide explanations (n_samples_to_explain, n_features)
+    that add up to 
+    Might have difficulty with a lot of data, so possible to_explain only a slice (defaults to all data)
+    Furher provision is taken by summarizing the background data when > 500 samples
+    Kernel Shap can only manipulate a single input. But a non-submodel model needs 
+    two types of inputs, so we need to merge and circumvent.
     """
-    explainer = shap.KernelExplainer(svm.predict_proba, X_train, link="logit")
-    shap_values = explainer.shap_values(X_test, nsamples=100)
+    assert model.output.shape[-1] >= 2, 'One-class models currently not supported'
+    assert_model_requirements(model = model, additional_inputs = additional_inputs)
+    if not model.is_submodel:
+        additional_size = additional_inputs.shape[-1]
+        single_input = np.concatenate([feature_inputs, additional_inputs], axis = 1)
+        def split_input_and_predict(self, singleinput: np.ndarray):
+            return self.predict([singleinput[:,:-additional_size],singleinput[:,-additional_size:]])  
+        model.predfunc = MethodType(split_input_and_predict, model) 
+    else:
+        single_input = feature_inputs
+        model.predfunc = model.predict 
+    if single_input.shape[0] > 500:
+        explainer = shap.KernelExplainer(model = model.predfunc, data = shap.kmeans(single_input, k = 8), link="identity")
+    else:
+        explainer = shap.KernelExplainer(model = model.predfunc, data = single_input, link="identity") # data = background data
+    shap_values = explainer.shap_values(single_input[to_explain,:], nsamples=100) # For a two-class model this is a list with two matrices
+    if not model.is_submodel:
+        # The explanations need to be split again to the feature_inputs and additional_inputs separately 
+        for i, explanationblock in enumerate(shap_values): # Looping over classes
+            shap_values[i] = [explanationblock[:,:-additional_size], explanationblock[:,-additional_size:]] 
+    return shap_values[target_class]
 
 def order_by_hierachical_clustering(explanations: pd.DataFrame) -> pd.DataFrame:
     """
