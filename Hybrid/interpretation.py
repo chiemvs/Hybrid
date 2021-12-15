@@ -1,5 +1,6 @@
 import sys
 import os
+import warnings
 import numpy as np
 import pandas as pd
 import tensorflow as tf
@@ -89,7 +90,8 @@ def kernel_shap(model: tf.keras.Model, feature_inputs: np.ndarray, to_explain: s
     else:
         single_input = feature_inputs
         model.predfunc = model.predict 
-    if single_input.shape[0] > 500:
+    if single_input.shape[0] > 300:
+        warnings.warn('more than 300 samples detected, summarizing background dataset with shap.kmeans')
         explainer = shap.KernelExplainer(model = model.predfunc, data = shap.kmeans(single_input, k = 8), link="identity")
     else:
         explainer = shap.KernelExplainer(model = model.predfunc, data = single_input, link="identity") # data = background data
