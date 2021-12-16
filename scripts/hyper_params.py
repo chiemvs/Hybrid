@@ -18,19 +18,20 @@ Reading in pre-selected predictor sets (either sequential or jmeasure).
 and preconstructed targets
 """
 #targetname = 'tg-ex-q0.75-21D_ge5D_sep12-15'
-#selection = 'multi_d20_b3'
-selection = 'jmeasure-dyn'
+targetname = 'tg-anom_JJA_45r1_31D-roll-mean_q05_sep12-15'
+selection = 'multi_d20_b3'
+#selection = 'jmeasure-dyn'
 basedir = Path('/nobackup/users/straaten')
 savedir = basedir / f'hyperparams/{targetname}_{selection}'
 if savedir.exists():
     raise ValueError(f'hyperparam directory {savedir} already exists. Overwriting prevented. Check its content.')
 else:
     savedir.mkdir()
-#predictordir = basedir / 'predsets/objective_balanced_cv/' # Objectively sequential selected predictors
-predictordir = basedir / 'predsets/jmeasure/' # Objectively jmeasure selected predictors
+predictordir = basedir / 'predsets/objective_balanced_cv/' # Objectively sequential selected predictors
+#predictordir = basedir / 'predsets/jmeasure/' # Objectively jmeasure selected predictors
 for_obs_dir = basedir / 'predsets/full/' # contains corresponding forcasts and observations
 
-predictors = pd.read_hdf(predictordir / f'{targetname}_{selection}_predictors.h5', key = 'input')
+predictors = pd.read_hdf(predictordir / f'{targetname}_{selection}_predictors.h5', key = 'input').iloc[:,:4]
 forc = pd.read_hdf(for_obs_dir / f'{targetname}_forc.h5', key = 'input')
 obs = pd.read_hdf(for_obs_dir / f'{targetname}_obs.h5', key = 'target')
 

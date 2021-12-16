@@ -33,20 +33,21 @@ predictors, forc, obs = prepare_full_set(targetname, ndaythreshold = ndaythresho
 if preload: # For instance a predictor set coming from 
     #loadpath = '/nobackup/users/straaten/predsets/objective_balanced_cv/tg-ex-q0.75-21D_ge7D_sep12-15_multi_d20_b3_predictors.h5'
     #loadpath = '/nobackup/users/straaten/predsets/objective_balanced_cv/tg-ex-q0.75-21D_ge5D_sep12-15_multi_d20_b3_predictors.h5'
+    loadpath = '/nobackup/users/straaten/predsets/objective_balanced_cv/tg-anom_JJA_45r1_21D-roll-mean_q09_sep12-15_multi_d20_b3_predictors.h5'
     #loadpath = '/nobackup/users/straaten/predsets/objective_balanced_cv/tg-anom_JJA_45r1_21D-roll-mean_q075_sep12-15_multi_d20_b3_predictors.h5'
     #loadpath = '/nobackup/users/straaten/predsets/objective_balanced_cv/tg-anom_JJA_45r1_21D-roll-mean_q05_sep12-15_multi_d20_b3_predictors.h5'
     #loadpath = '/nobackup/users/straaten/predsets/objective_balanced_cv/tg-anom_JJA_45r1_31D-roll-mean_q075_sep12-15_multi_d20_b3_predictors.h5'
-    loadpath = '/nobackup/users/straaten/predsets/objective_balanced_cv/tg-anom_JJA_45r1_31D-roll-mean_q05_sep12-15_multi_d20_b3_predictors.h5'
+    #loadpath = '/nobackup/users/straaten/predsets/objective_balanced_cv/tg-anom_JJA_45r1_31D-roll-mean_q05_sep12-15_multi_d20_b3_predictors.h5'
     #loadpath = '/nobackup/users/straaten/predsets/objective_balanced_cv/nonsmooth/tg-anom_JJA_45r1_31D-roll-mean_q075_sep12-15_multi_d20_b3_predictors.h5'
     #loadpath = '/nobackup/users/straaten/predsets/objective_balanced_cv/no_pdomjo/tg-anom_JJA_45r1_31D-roll-mean_sep12-15_multi_d20_b3_predictors.h5'
-    predictors = pd.read_hdf(loadpath, key = 'input').iloc[:,:4]
+    predictors = pd.read_hdf(loadpath, key = 'input').iloc[:,:6]
 
 
 """
 Predictand replacement with tg-anom, [21D, 31D] > [q0.5,q0.75]
 Quite involved because thresholds need to be matched
 """
-quantile = 0.5
+quantile = 0.9
 timeagg = 21
 tganom_name = f'books_paper3-1_tg-anom_JJA_45r1_{timeagg}D-roll-mean_15-t2m-q095-adapted-mean.csv'
 climname = f'tg-anom_clim_1998-06-07_2019-10-31_{timeagg}D-roll-mean_15-t2m-q095-adapted-mean_15_15_q{quantile}'
@@ -254,7 +255,7 @@ stats = pd.Series(stats)
 """
 Check interpretation
 """
-from Hybrid.interpretation import combine_input_output, gradient, backward_optimization, model_to_submodel, kernel_shap
+#from Hybrid.interpretation import combine_input_output, gradient, backward_optimization, model_to_submodel, kernel_shap
 
 if crossval_scaling:
     feature_input, feature_scaler = scale_other_features(final_trainval) 
@@ -262,7 +263,7 @@ model = constructor.fresh_model()
 ###fit_kwargs['shuffle'] = False
 ##fit_kwargs['epochs'] = 20
 model.fit(x = [feature_input, raw_predictions], y=obs_input, validation_split = 0.33, **fit_kwargs)
-test = combine_input_output(model = model, feature_inputs = feature_input, log_of_raw = raw_predictions, target_class_index = -1, feature_names = final_trainval.columns.to_flat_index(), index = final_trainval.index)
+#test = combine_input_output(model = model, feature_inputs = feature_input, log_of_raw = raw_predictions, target_class_index = -1, feature_names = final_trainval.columns.to_flat_index(), index = final_trainval.index)
 
 #smodel = model_to_submodel(model)
 #
@@ -274,8 +275,8 @@ test = combine_input_output(model = model, feature_inputs = feature_input, log_o
 #ftest = kernel_shap(model, feature_input[:400,:], to_explain = slice(None), additional_inputs = raw_predictions[:400,:], target_class = -1)
 
 
-#climmodel = constructor2.fresh_model()
-#climmodel.fit(x = [feature_input, time_input], y=obs_input, validation_split = 0.33, **fit_kwargs)
+climmodel = constructor2.fresh_model()
+climmodel.fit(x = [feature_input, time_input], y=obs_input, validation_split = 0.33, **fit_kwargs)
 
 """
 danger zone
@@ -285,15 +286,15 @@ danger zone
 #X_test = X_test.loc[(slice(None),15),:] 
 #forc_test = forc_test.loc[(slice(None),15),:] 
 ## 
-#time_test = time_scaler.transform(obs_test.index.get_level_values('time').to_julian_date()[:,np.newaxis])
-#feature_test = feature_scaler.transform(X_test.loc[:,final_trainval.columns])
-#raw_test = multiclass_log_forecastprob(forc_test)
-#score = model.evaluate([feature_test,raw_test],obs_test.values)
-#climmodel_score = climmodel.evaluate([feature_test,time_test], obs_test.values)
-#test_pred = model.predict([feature_test,raw_test])
-#train_pred = model.predict([feature_input, raw_predictions]) 
-#print(f'model: {score[-1]}')
-#print(f'climmodel: {climmodel_score[-1]}')
-#print('raw:', np.mean((obs_test.iloc[:,focus_class] - forc_test.iloc[:,focus_class])**2))
-#print('trend:', np.mean((obs_test.iloc[:,focus_class] - lr.predict(time_test))**2))
-#print('BSS:', 1- score[-1]/np.mean((obs_test.iloc[:,focus_class] - forc_test.iloc[:,focus_class])**2))
+time_test = time_scaler.transform(obs_test.index.get_level_values('time').to_julian_date()[:,np.newaxis])
+feature_test = feature_scaler.transform(X_test.loc[:,final_trainval.columns])
+raw_test = multiclass_log_forecastprob(forc_test)
+score = model.evaluate([feature_test,raw_test],obs_test.values)
+climmodel_score = climmodel.evaluate([feature_test,time_test], obs_test.values)
+test_pred = model.predict([feature_test,raw_test])
+train_pred = model.predict([feature_input, raw_predictions]) 
+print(f'model: {score[-1]}')
+print(f'climmodel: {climmodel_score[-1]}')
+print('raw:', np.mean((obs_test.iloc[:,focus_class] - forc_test.iloc[:,focus_class])**2))
+print('trend:', np.mean((obs_test.iloc[:,focus_class] - lr.predict(time_test))**2))
+print('BSS:', 1- score[-1]/np.mean((obs_test.iloc[:,focus_class] - forc_test.iloc[:,focus_class])**2))

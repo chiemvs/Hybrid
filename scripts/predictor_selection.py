@@ -25,6 +25,7 @@ savedir = Path('/nobackup/users/straaten/predsets/objective_balanced_cv/')
 #savename = f'tg-ex-q0.75-21D_ge5D_sep12-15'
 #savename = f'tg-anom_JJA_45r1_21D-roll-mean_q05_sep12-15'
 #savename = f'tg-anom_JJA_45r1_21D-roll-mean_q075_sep12-15'
+savename = f'tg-anom_JJA_45r1_21D-roll-mean_q09_sep12-15'
 #savename = f'tg-anom_JJA_45r1_31D-roll-mean_q05_sep12-15'
 #savename = f'tg-anom_JJA_45r1_31D-roll-mean_q075_sep12-15'
 predictors = pd.read_hdf(opendir / f'{savename}_predictors.h5', key = 'input')
@@ -79,7 +80,7 @@ def score_model(training_data: Tuple[np.ndarray,np.ndarray], scoring_data: tuple
             n_features = n_predictors,
             n_hiddenlayer_nodes = nhidden_nodes)
     
-    compile_kwargs = dict(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001))
+    compile_kwargs = dict(optimizer=tf.keras.optimizers.Adam(learning_rate=0.0014))
     
     constructor = ConstructorAndCompiler(construct_modeldev_model, construct_kwargs, compile_kwargs)
     
