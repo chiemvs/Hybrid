@@ -111,7 +111,7 @@ def order_by_hierachical_clustering(explanations: pd.DataFrame) -> pd.DataFrame:
     cl.prepare_for_distance_algorithm(array = explanations.values.T) # N_features, nsamples
     cl.call_distance_algorithm(func = pairwise_distances, kwargs = {'metric':'euclidean'})
     leaforder = cl.clustering(clusterclass = None, kwargs = {'optimal_ordering':True})
-    return explanations.iloc[leadorder.squeeze(),:]
+    return explanations.iloc[leaforder.squeeze(),:]
     
 def wrap_crossentropy(pred: tf.Tensor, y_true: tf.Tensor):
     """
