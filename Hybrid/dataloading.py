@@ -164,7 +164,7 @@ def prepare_full_set(predictand_name, ndaythreshold: Union[List[int],int], predi
         'books_paper3-3-simple_swvl13-anom_JJA_45r1_14D-roll-mean_1-swvl-simple-mean.csv',
         'books_paper3-3-simple_z-anom_JJA_45r1_21D-roll-mean_1-swvl-simple-mean.csv',
         'books_paper3-3-simple_sst-anom_JJA_45r1_21D-roll-mean_1-sst-simple-mean.csv',
-        'books_paper3-4-regimes_z-anom_JJA_45r1_21D-frequency_ids.csv',
+        'books_paper3-4-4regimes_z-anom_JJA_45r1_21D-frequency_ids.csv',
         ],
         'readfunc':[
         read_raw_predictor_ensmean,
