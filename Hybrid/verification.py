@@ -11,10 +11,7 @@ import pandas as pd
 from sklearn.linear_model import LogisticRegression
 from pathlib import Path
 
-from .dataprep import binarize_hotday_predictand
-
-sys.path.append(os.path.expanduser('~/Documents/Weave'))
-from Weave.models import BaseExceedenceModel
+from .dataprep import test_trainval_split, multiclass_log_forecastprob, scale_other_features, scale_time, binarize_hotday_predictand, singleclass_regression # We do not use base-exceedence from Weave.models because the scaler is hidden
 
 sys.path.append(os.path.expanduser('~/Documents/SubSeas'))
 from observations import Climatology
@@ -24,29 +21,40 @@ from comparison import ForecastToObsAlignment, Comparison
 def load(booksname: str, compute = False):
     al = ForecastToObsAlignment('JJA','45r1')
     al.recollect(booksname = booksname)
+    al.alignedobject['separation'] = al.alignedobject['leadtime'] - 1
     if compute:
         return(al.alignedobject.compute())
     else:
         return al
 
-def add_trend_model(df, groupers = ['leadtime','clustid'], return_coefs = True):
+def add_trend_model(df: pd.DataFrame, groupers = ['leadtime','clustid'], exclude_test: bool = False, return_coefs = False):
     """
     Modifies the dataframe inplace, adding a trend column 
     This can involve multiple logistic regressions. namely one for a series with a unique time_index.
     Determined by groupers. Pooling (non-grouping) leadtime might be possible, 
     but still needs unique time for reindex
     """
-    groupeddf = df.groupby(groupers)
+    smalldf = df[['observation']]
+    if smalldf.columns.nlevels == 2:
+        smalldf.columns = smalldf.columns.droplevel(-1)
+    groupeddf = smalldf.groupby(groupers) # Accomodating the fact that multiple regions might be included
     coefs = []
     intercepts = []
     predictions = []
     keys = []
     for key, subdf in groupeddf:
-        model = BaseExceedenceModel()
-        model.fit(X = subdf, y = subdf[('observation',0)]) # Extracts and normalizes the timeindex from X
-        predictions.append(pd.Series(model.predict(X = subdf), index = subdf.index , name = 'trend'))
-        coefs.append(model.coef_[0][0])
-        intercepts.append(model.intercept_[0])
+        if exclude_test:
+            subdf_test, subdf_trainval, _ = test_trainval_split(subdf.sort_index(), crossval = True, nfolds = 3, balanced = True)
+            print(f'excluding test years {subdf_test.index.get_level_values("time").year.unique().values} from logistic trend fit') 
+        else:
+            subdf_trainval = subdf
+        # Fitting. Regression function extracts and normalizes the time index of the target 
+        time_trainval_scaled, time_scaler, logreg = singleclass_regression(binary_obs = subdf_trainval['observation'])
+        # Generation of predictions
+        time_scaled, _ = scale_time(subdf, fitted_scaler=time_scaler)
+        predictions.append(pd.Series(logreg.predict(time_scaled), index = subdf.index , name = 'trend'))
+        coefs.append(logreg.coef_[0][0])
+        intercepts.append(logreg.intercept_[0])
         keys.append(key)
     predictions = pd.concat(predictions, axis = 0).reindex(df.index) # Should be the same order now as the non-indexed df
     df['trend'] = predictions.values
@@ -92,10 +100,10 @@ def load_tganom_and_compute(bookfile: str, climname: str, modelclim: str = None,
     comp = Comparison(al, climatology = cl, modelclimatology = mcl)
     comp.brierscore() # Transforms the observations in exceedences. Needed for trend model. 
     df = comp.frame.compute()
-    df = df.set_index(['time','leadtime','clustid'])
+    df = df.set_index(['time','separation', 'clustid'])
     # Adding reference forecasts, namely the constant prediction, and potentially the trend
     if add_trend:
-        coefs = add_trend_model(df = df, groupers = ['leadtime','clustid'], return_coefs=return_trend)
+        coefs = add_trend_model(df = df, groupers = ['separation','clustid'], exclude_test = True, return_coefs=return_trend)
         df = compute_bs(df) # Also BS for the trend
     if return_trend:
         return df, coefs
@@ -115,9 +123,9 @@ def load_tgex_and_compute(bookfile: str, nday_threshold: int = 3, add_trend: boo
     clim_chances = df.groupby('clustid').mean()['observation'] # Assume there is little leadtime dependence (pooling these for a smoother estimate)
     clim_chances.columns = pd.MultiIndex.from_tuples([('climatology','')])
     df = df.merge(clim_chances, on = 'clustid')
-    df = df.set_index(['time','leadtime','clustid'])
+    df = df.set_index(['time','separation', 'clustid'])
     if add_trend:
-        coefs = add_trend_model(df = df, groupers = ['leadtime','clustid'], return_coefs=return_trend) # happens inplace
+        coefs = add_trend_model(df = df, groupers = ['separation','clustid'], exclude_test = True, return_coefs=return_trend) # happens inplace
     df = compute_bs(df)
     returns = (df,)
     if return_clim_freq:
@@ -154,11 +162,10 @@ def load_compute_rank(bookfile: str, return_bias: bool = False):
 
 def build_fit_nn_model(predictandname, add_trend: bool = True, npreds: int = None, return_separate_test: bool = True):
     """
-    Uses the standard settings
+    Uses the default settings
     Like a predetermined objective set (either jmeasure or sequential forward if npreds is given )
     """
-    from Hybrid.neuralnet import construct_modeldev_model, earlystop, BrierScore, ConstructorAndCompiler
-    from Hybrid.dataprep import test_trainval_split, multiclass_log_forecastprob, singleclass_regression, multiclass_logistic_regression_coefficients, scale_other_features, scale_time
+    from Hybrid.neuralnet import construct_modeldev_model, BrierScore, ConstructorAndCompiler, DEFAULT_CONSTRUCT, DEFAULT_COMPILE, DEFAULT_FIT
 
     for_obs_dir = Path('/nobackup/users/straaten/predsets/full/') 
     if npreds is None: # jmeasure, still objective
@@ -172,6 +179,10 @@ def build_fit_nn_model(predictandname, add_trend: bool = True, npreds: int = Non
     obs= pd.read_hdf(for_obs_dir / f'{predictandname}_obs.h5', key = 'target')
     
     focus_class = -1
+    # Some climatological information, could for tganom predictands also be derived from the name.
+    # But not for tg-ex
+    climprob = obs.mean(axis = 0).iloc[focus_class]
+
     # Splitting the sets.
     X_test, X_trainval, generator = test_trainval_split(predictors, crossval = True, nfolds = 3, balanced = True)
     forc_test, forc_trainval, generator = test_trainval_split(forc, crossval = True, nfolds = 3, balanced = True)
@@ -186,37 +197,30 @@ def build_fit_nn_model(predictandname, add_trend: bool = True, npreds: int = Non
     features_test, _ = scale_other_features(X_test, fitted_scaler=feature_scaler)
     logforc_test = multiclass_log_forecastprob(forc_test)
 
-    # Setting up the model TODO: try to place these default_kwargs in Hybrid.neuralnet
-    construct_kwargs = dict(n_classes = obs_trainval.shape[-1],
-            n_hidden_layers= 1,
-            n_features = features_trainval.shape[-1],
-            n_hiddenlayer_nodes = 4)
+    DEFAULT_CONSTRUCT.update(n_classes = obs_trainval.shape[-1], n_features = features_trainval.shape[-1])
+    DEFAULT_COMPILE['metrics'] += [BrierScore(class_index = focus_class)]
 
-    compile_kwargs = dict(optimizer=tf.keras.optimizers.Adam(learning_rate=0.0014),
-            metrics = ['accuracy',BrierScore(class_index = focus_class)])
-
-    constructor = ConstructorAndCompiler(construct_modeldev_model, construct_kwargs, compile_kwargs)
-
-    fit_kwargs = dict(batch_size = 32, epochs = 200, shuffle = True, 
-            callbacks = [earlystop(patience = 7, monitor = 'val_loss')])
+    constructor = ConstructorAndCompiler(construct_modeldev_model, DEFAULT_CONSTRUCT, DEFAULT_COMPILE)
 
     # Training the model
     model = constructor.fresh_model()
-    model.fit(x = [features_trainval, logforc_trainval], y=obsinp_trainval, validation_split = 0.33, **fit_kwargs)
+    model.fit(x = [features_trainval, logforc_trainval], y=obsinp_trainval, validation_split = 0.33, **DEFAULT_FIT)
     
     # Generating model predictions:
     preds_test = model.predict(x = [features_test, logforc_test])
     preds_trainval = model.predict(x = [features_trainval, logforc_trainval])
 
-    #total = pd.DataFrame{'pi': forc.iloc[:,focus_class], 'pp':np.concatenate([preds
+    total = pd.DataFrame({'pi': np.concatenate([forc_trainval, forc_test])[:,focus_class], 
+            'pp':np.concatenate([preds_trainval, preds_test])[:,focus_class],
+            'climatology':climprob}, index = forc_trainval.index.union(forc_test.index, sort = False))
+
+    total['observation'] = np.concatenate([obs_trainval, obs_test])[:,focus_class]
+    total.index = pd.MultiIndex.from_frame(total.index.to_frame().assign(clustid = 9))
 
     # Training a trend benchmark model, and generating scale test time input
     if add_trend:
-        time_input, time_scaler, lr = singleclass_regression(obs_trainval.iloc[:,focus_class], regressor = LogisticRegression)
-        time_test, _ = scale_time(obs_test, fitted_scaler=time_scaler)
+        coefs = add_trend_model(df = total, groupers = ['separation','clustid'], exclude_test = True, return_coefs=False) # happens inplace
 
-        # Generating benchmark predictions:
-        trend_test = lr.predict(time_test)
-        trend_trainval = lr.predict(time_input)
+    total = compute_bs(total)
 
-    return forc_test, forc_trainval, obs_test, obs_trainval, preds_test, preds_trainval 
+    return total

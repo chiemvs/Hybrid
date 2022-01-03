@@ -14,6 +14,8 @@ from sklearn.preprocessing import MinMaxScaler
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import StratifiedKFold
 
+THREEFOLD_DIVISION = pd.Series([ 0,1,2,1,1,2,2,0,1,0,0,1,1,2,0,99,2,99,99,2,0,99], index = pd.RangeIndex(1998,2020, name = 'year')) # Generated with generate_balanced_kfold with forecasts > 7 hot days in 21 day period, leadtime = 19-21. 99 is the test class.. [0,1,2,0,1,2,0,2,1,0,1,2,0,1,2,99,99,99,2,1,0,99] was based on the old Excel balancing
+
 def categorize_hotday_predictand(df: Union[pd.Series, pd.DataFrame], lower_split_bounds: List[int]) -> Tuple[pd.Series, pd.DataFrame]:
     """
     Lower bounds in days. E.g. [4,8,14] leads to four groups
@@ -148,8 +150,7 @@ def test_trainval_split(df: Union[pd.Series, pd.DataFrame], crossval: bool = Fal
         generator = SingleGenerator(trainvalset.index.get_loc_level(val_time,'time')[0]) # This passes the boolean array to the generator
     elif balanced:
         assert nfolds == 3, 'balanced crossvalidation only done for three folds'
-        #division = pd.Series([0,1,2,0,1,2,0,2,1,0,1,2,0,1,2,99,99,99,2,1,0,99], index = pd.RangeIndex(1998,2020, name = 'year')) #Based on excel balancing
-        division = pd.Series([ 0,1,2,1,1,2,2,0,1,0,0,1,1,2,0,99,2,99,99,2,0,99], index = pd.RangeIndex(1998,2020, name = 'year')) # Generated with generate_balanced_kfold with forecasts > 7 hot days in 21 day period, leadtime = 19-21. 
+        division = THREEFOLD_DIVISION
         division = division.reindex(df.index.get_level_values('time').year).values
         testset = df.loc[division == 99] # Actually a slightly different test set, and array indexing as opposed to slicing
         trainvalset = df.loc[division != 99]
@@ -287,7 +288,7 @@ def scale_other_features(df: Union[pd.DataFrame,np.ndarray], fitted_scaler: MinM
         scaled_input = fitted_scaler.transform(df)
     return scaled_input, fitted_scaler
 
-def singleclass_regression(binary_obs: pd.Series, regressor = LogisticRegression) -> Tuple[dict,np.ndarray,MinMaxScaler]:
+def singleclass_regression(binary_obs: pd.Series, regressor = LogisticRegression) -> Tuple[np.ndarray,MinMaxScaler,LogisticRegression]:
     """
     Singleclass benchmark, returning the input, scaler, and regressor
     Time (julian-day) is the only input (index of the binary obs), but needs to be min-max scaled. So fitted scaler is returned too

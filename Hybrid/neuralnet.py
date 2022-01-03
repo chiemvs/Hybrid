@@ -3,6 +3,20 @@ import tensorflow as tf
 
 from typing import Callable
 
+def earlystop(patience: int = 10, monitor: str = 'val_loss'):
+    return tf.keras.callbacks.EarlyStopping(
+        monitor=monitor, min_delta=0, patience=patience,
+        verbose=1, mode='auto', restore_best_weights=True) 
+
+DEFAULT_FIT = dict(batch_size = 32, epochs = 200, shuffle = True,  callbacks = [earlystop(patience = 7, monitor = 'val_loss')])
+
+DEFAULT_CONSTRUCT = dict(n_hidden_layers= 1, n_hiddenlayer_nodes = 4)
+
+DEFAULT_COMPILE = dict(optimizer=tf.keras.optimizers.Adam(learning_rate=0.0014),
+            metrics = ['accuracy'])
+
+DEFAULT_LOSS = tf.keras.losses.CategoricalCrossentropy(from_logits = False) # Under the hood logits are still used, but from cached ._keras_logits from e.g. softmax. Logits are no direct outputs of the model (only logarithms would be possible)
+
 class BrierScore(tf.keras.metrics.Metric):
     """
     Accumulates the quadratic distance (p_i - o_i)**2 across batches
@@ -112,22 +126,15 @@ def construct_modeldev_model(n_classes: int, n_hidden_layers: int, n_features: i
     
     return tf.keras.models.Model(inputs = [feature_input, log_p_raw], outputs = prob_dist)
 
-preferred_loss = tf.keras.losses.CategoricalCrossentropy(from_logits = False) # Under the hood logits are still used, but from cached ._keras_logits from e.g. softmax. Logits are no direct outputs of the model (only logarithms would be possible)
-
-def earlystop(patience: int = 10, monitor: str = 'val_loss'):
-    return tf.keras.callbacks.EarlyStopping(
-        monitor=monitor, min_delta=0, patience=patience,
-        verbose=1, mode='auto', restore_best_weights=True) 
-
-reducelr = tf.keras.callbacks.ReduceLROnPlateau(
-        monitor='val_loss', factor=0.1, patience=5, verbose=1,
-        mode='auto', min_delta=0.0001, cooldown=0, min_lr=1e-6)
-
 class ConstructorAndCompiler(object):
-    def __init__(self, construct_func: Callable = construct_modeldev_model, construct_kwargs: dict = dict(n_classes = 2, n_hidden_layers = 0, n_features = 10), compile_kwargs: dict = dict(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001))):
+    """
+    Class to retain hyperparameter information and provide newly initialized unfitted versions
+    Parameters default to the default kwargs
+    Of the default_construct kwargs, n_features and n_classes are missing
+    """
+    def __init__(self, construct_func: Callable = construct_modeldev_model, construct_kwargs: dict = DEFAULT_CONSTRUCT, compile_kwargs: dict = DEFAULT_COMPILE):
         """
         construct func is one of the degined above (construct_modeldev_model, construct_climdev_model)
-        Default arguments as an example
         """
         self.construct_func = construct_func
         self.construct_kwargs = construct_kwargs
@@ -135,6 +142,13 @@ class ConstructorAndCompiler(object):
 
     def fresh_model(self):
         model = self.construct_func(**self.construct_kwargs)
-        model.compile(loss=preferred_loss, **self.compile_kwargs)
+        model.compile(loss=DEFAULT_LOSS, **self.compile_kwargs)
         return model
+
+"""
+Other callback functionality, not really used
+"""
+reducelr = tf.keras.callbacks.ReduceLROnPlateau(
+        monitor='val_loss', factor=0.1, patience=5, verbose=1,
+        mode='auto', min_delta=0.0001, cooldown=0, min_lr=1e-6)
 
