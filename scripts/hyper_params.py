@@ -18,7 +18,9 @@ Reading in pre-selected predictor sets (either sequential or jmeasure).
 and preconstructed targets
 """
 #targetname = 'tg-ex-q0.75-21D_ge5D_sep12-15'
-targetname = 'tg-anom_JJA_45r1_31D-roll-mean_q05_sep12-15'
+quantile = 0.5
+timeagg = 31
+targetname = f'tg-anom_JJA_45r1_{timeagg}D-roll-mean_q{quantile}_sep12-15'
 selection = 'multi_d20_b3'
 #selection = 'jmeasure-dyn'
 basedir = Path('/nobackup/users/straaten')

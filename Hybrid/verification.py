@@ -5,11 +5,14 @@ And to add benchmark models.
 """
 import os 
 import sys
+import warnings
 import numpy as np
 import pandas as pd
 
 from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import roc_auc_score
 from pathlib import Path
+from typing import Callable, Union, List
 
 from .dataprep import test_trainval_split, multiclass_log_forecastprob, scale_other_features, scale_time, binarize_hotday_predictand, singleclass_regression # We do not use base-exceedence from Weave.models because the scaler is hidden
 
@@ -17,6 +20,9 @@ sys.path.append(os.path.expanduser('~/Documents/SubSeas'))
 from observations import Climatology
 from forecasts import ModelClimatology
 from comparison import ForecastToObsAlignment, Comparison
+
+sys.path.append(os.path.expanduser('~/Documents/Weave'))
+from Weave.utils import max_pev
 
 def load(booksname: str, compute = False):
     al = ForecastToObsAlignment('JJA','45r1')
@@ -62,16 +68,24 @@ def add_trend_model(df: pd.DataFrame, groupers = ['leadtime','clustid'], exclude
         logreg_results = pd.DataFrame({'coef':coefs, 'intercept':intercepts}, index = pd.MultiIndex.from_tuples(keys, names = groupers))
         return logreg_results
 
-def compute_bs(df):
+def _compute_score(df, scorename: str, scorefunc: Callable, args: tuple = tuple(), kwargs: dict = {}):
     """
-    Computation of the BS values for those that are not yet computed
+    Computation of scores for present columns 
+    in relation to the observation
+    takes only those are not yet computed (no {column}_{scorename} present)
+    scorefunc should accept (y_true, y_pred)
     """
-    for key in ['pi','pp','climatology','trend']:
-        newkey = f'{key}_bs'
+    for key in ['pi','ppjm','ppsf','climatology','trend']:
+        newkey = f'{key}_{scorename}'
         if (key in df.columns) and (not (newkey in df.columns)):
-            bs = (df[key].values.squeeze() - df['observation'].values.squeeze())**2
-            df[newkey] = bs
+            score = scorefunc(df['observation'].values.squeeze(), df[key].values.squeeze(), *args, **kwargs)
+            df.loc[:,newkey] = score
     return df
+
+def compute_bs(df):
+    def bs(y_true, y_pred):
+        return (y_pred - y_true)**2
+    return _compute_score(df, scorename = 'bs', scorefunc = bs)
 
 def compute_bss(df):
     """
@@ -79,14 +93,26 @@ def compute_bss(df):
     carrying post-processed probabilities
     """
     bs_cols = df.columns.get_level_values(0).str.endswith('bs')
-    mean_bs = df.iloc[:,bs_cols].groupby(['leadtime','clustid']).mean() # Mean over time
-    mean_bs.columns = mean_bs.columns.droplevel('number')
-    mean_bs['bss_climatology'] = 1 - mean_bs['pi_bs'] / mean_bs['climatology_bs']
-    if 'trend_bs' in mean_bs.columns:
-        mean_bs['bss_trend'] = 1 - mean_bs['pi_bs'] / mean_bs['trend_bs']
-        return mean_bs[['bss_climatology','bss_trend']]
-    else:
-        return mean_bs[['bss_climatology']]
+    mean_bs = df.iloc[:,bs_cols].groupby(['separation','clustid']).mean() # Mean over time
+    if means_bs.columns.nlevels == 2:
+        mean_bs.columns = mean_bs.columns.droplevel('number')
+    for key in ['pi','ppsf','ppjm']:
+        try:
+            mean_bs[f'{key}_climatology_bss'] = 1 - mean_bs['{key}_bs'] / mean_bs['climatology_bs']
+            mean_bs[f'{key}_trend_bss'] = 1 - mean_bs['{key}_bs'] / mean_bs['trend_bs']
+        except KeyError:
+            pass
+    return mean_bs.iloc[:,mean_bs.columns.str.endswith('bss')]
+
+def compute_kss(df):
+    assert len(df.index.get_level_values('clustid').unique()) == 1, 'kuipers skill score aggregates the whole frame to a single float, so can only be called on a homogeneous set, no multiple clustids allowed'
+    warnings.warn('kuipers skill score aggregates the whole frame to a single float, so can only be called on a homogeneous set. Check the leadtimes you are pooling')
+    return _compute_score(df, scorename = 'kss', scorefunc = max_pev)
+
+def compute_auc(df):
+    assert len(df.index.get_level_values('clustid').unique()) == 1, 'AUC score aggregates the whole frame to a single float, so can only be called on a homogeneous set, no multiple clustids allowed'
+    warnings.warn('AUC score aggregates the whole frame to a single float, so can only be called on a homogeneous set. Check the leadtimes you are pooling')
+    return _compute_score(df, scorename = 'auc', scorefunc = roc_auc_score)
 
 def load_tganom_and_compute(bookfile: str, climname: str, modelclim: str = None, add_trend: bool = True, return_trend: bool = False):
     al = load(booksname = bookfile, compute = False)
@@ -160,7 +186,7 @@ def load_compute_rank(bookfile: str, return_bias: bool = False):
         frame.loc[:,'bias'] = frame['forecast'].mean(axis = 1) - frame['observation'] #bias between ensmean - obs 
         return frame[['placement','bias']], bin_edges
 
-def build_fit_nn_model(predictandname, add_trend: bool = True, npreds: int = None, return_separate_test: bool = True):
+def build_fit_nn_model(predictandname, add_trend: bool = True, npreds: int = None, use_jmeasure: bool = False, return_separate_test: bool = True):
     """
     Uses the default settings
     Like a predetermined objective set (either jmeasure or sequential forward if npreds is given )
@@ -168,10 +194,12 @@ def build_fit_nn_model(predictandname, add_trend: bool = True, npreds: int = Non
     from Hybrid.neuralnet import construct_modeldev_model, BrierScore, ConstructorAndCompiler, DEFAULT_CONSTRUCT, DEFAULT_COMPILE, DEFAULT_FIT
 
     for_obs_dir = Path('/nobackup/users/straaten/predsets/full/') 
-    if npreds is None: # jmeasure, still objective
+    if use_jmeasure: # jmeasure, still objective
+        signature = 'jm'
         predictor_dir = Path('/nobackup/users/straaten/predsets/jmeasure/')
-        predictor_name = f'{predictandname}_jmeasure-dyn_predictors.h5'
+        predictor_name = f'{predictandname}_jmeasure_predictors.h5'
     else: # sequential forward
+        signature = 'sf'
         predictor_dir = Path('/nobackup/users/straaten/predsets/objective_balanced_cv/')
         predictor_name = f'{predictandname}_multi_d20_b3_predictors.h5'
     predictors = pd.read_hdf(predictor_dir / predictor_name, key = 'input').iloc[:,slice(npreds)]
@@ -198,7 +226,7 @@ def build_fit_nn_model(predictandname, add_trend: bool = True, npreds: int = Non
     logforc_test = multiclass_log_forecastprob(forc_test)
 
     DEFAULT_CONSTRUCT.update(n_classes = obs_trainval.shape[-1], n_features = features_trainval.shape[-1])
-    DEFAULT_COMPILE['metrics'] += [BrierScore(class_index = focus_class)]
+    DEFAULT_COMPILE['metrics'] = ['accuracy',BrierScore(class_index = focus_class)]
 
     constructor = ConstructorAndCompiler(construct_modeldev_model, DEFAULT_CONSTRUCT, DEFAULT_COMPILE)
 
@@ -211,7 +239,7 @@ def build_fit_nn_model(predictandname, add_trend: bool = True, npreds: int = Non
     preds_trainval = model.predict(x = [features_trainval, logforc_trainval])
 
     total = pd.DataFrame({'pi': np.concatenate([forc_trainval, forc_test])[:,focus_class], 
-            'pp':np.concatenate([preds_trainval, preds_test])[:,focus_class],
+            f'pp{signature}':np.concatenate([preds_trainval, preds_test])[:,focus_class],
             'climatology':climprob}, index = forc_trainval.index.union(forc_test.index, sort = False))
 
     total['observation'] = np.concatenate([obs_trainval, obs_test])[:,focus_class]
@@ -222,5 +250,26 @@ def build_fit_nn_model(predictandname, add_trend: bool = True, npreds: int = Non
         coefs = add_trend_model(df = total, groupers = ['separation','clustid'], exclude_test = True, return_coefs=False) # happens inplace
 
     total = compute_bs(total)
+    
+    if return_separate_test:
+        return total, total.iloc[total.index.droplevel(-1).get_indexer(X_test.index),:].copy()
+    else:
+        return total
 
-    return total
+def reduce_to_ranks(df):
+    """
+    Reduce the whole frame to rankings (one per score)
+    so make sure you supply the homogeneous set
+
+    """
+    df = df.copy()
+    if df.columns.nlevels == 2:
+        df.columns = df.columns.droplevel(-1)
+    returns = []
+    for scorename, ascending in zip(['bs','auc','kss'],[False,True,True]):
+        cols = df.columns.str.endswith(scorename)
+        if cols.any():
+            ranks = df.iloc[:,cols].mean().rank(ascending = ascending) # Highest rank = best
+            ranks.index = pd.MultiIndex.from_product([[scorename],[s.split('_')[0] for s in ranks.index]], names = ['score','forecast'])
+            returns.append(ranks)
+    return pd.concat(returns, axis = 0)
