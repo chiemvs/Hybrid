@@ -9,10 +9,13 @@ except ImportError:
     pass
 
 from copy import deepcopy
+from pathlib import Path
 from typing import Union, Callable, Tuple, List
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import StratifiedKFold
+
+from .neuralnet import construct_modeldev_model, BrierScore, ConstructorAndCompiler, DEFAULT_CONSTRUCT, DEFAULT_COMPILE, DEFAULT_FIT
 
 THREEFOLD_DIVISION = pd.Series([ 0,1,2,1,1,2,2,0,1,0,0,1,1,2,0,99,2,99,99,2,0,99], index = pd.RangeIndex(1998,2020, name = 'year')) # Generated with generate_balanced_kfold with forecasts > 7 hot days in 21 day period, leadtime = 19-21. 99 is the test class.. [0,1,2,0,1,2,0,2,1,0,1,2,0,1,2,99,99,99,2,1,0,99] was based on the old Excel balancing
 
@@ -325,7 +328,9 @@ def multiclass_logistic_regression_coefficients(onehot_obs: pd.DataFrame) -> Tup
 
 def generate_balanced_kfold(f_probs: pd.Series, shuffle = False) -> np.ndarray:
     """
-    Requirements:
+    Called early in the research to create a single division balanced division into
+    cross-validation folds
+    Its goals:
     - balanced random sample of high, normal, and low forecast probabilities
     - probability classes determined by terciles
     - test data has to be picked in 2013 and beyond (separate in 2)
@@ -354,15 +359,73 @@ def generate_balanced_kfold(f_probs: pd.Series, shuffle = False) -> np.ndarray:
     groups.iloc[available] = trainvalgroups
     return classes, groups
 
+"""
+All functionality combined into a default preparation
+"""
 
-if __name__ == '__main__':
-    yearset = np.arange(1998,2020)
-    # cold = -1, neutral = 0, hot = 1, cold = 0 Based on the mean forecast probability in that season
-    classes = np.array([-1,-1,0,0,0,1,0,1,1,-1,-1,0,0,0,-1,0,-1,1,0,0,1,1]) 
-    division = pd.Series(classes, index = yearset)
-    # Classes with based on forcast terciles:
-    classes2 = np.array([0,0,-1,-1,-1,1,-1,1,1,-1,-1,0,1,0,0,-1,0,1,0,1,1,1]) 
-    division2 = pd.Series(classes2, index = yearset)
+class PreparedData(object):
+    """
+    Nested data structure to contain all raw (pd.DataFrame)
+    and prepared (np.ndarray) data
+    """
+    def __init__(self):
+        pass
 
-    # First 2 folds in 2013 + to split trainval from test there
-    # Then in all remaining years. StratifiedKFold
+    def add_data(self, name: str, **kwargs):
+        setattr(self, name, PreparedData())
+        for key in kwargs.keys():
+            setattr(getattr(self, name), key, kwargs[key])
+
+def default_prep(predictandname, npreds: int = None, use_jmeasure: bool = False, focus_class: int = -1) -> Tuple[PreparedData,ConstructorAndCompiler]:
+    """
+    Can only be used with a certain predictand when files have already been prepared
+    It assumes a written (objectively selected for this specific predictand) predictor set 
+    or when npreds is None it reads the full set without any selection
+    Calls upon the above functionality to prepare inputs for the neural network,
+    and to setup the architecture corresponding to the input size (and nclasses of the predictand)
+    which is returned in the form of a constructor
+    """
+    for_obs_dir = Path('/nobackup/users/straaten/predsets/full/') 
+    if npreds is None:
+        print('reading full set, no objective selection')
+        predictor_dir = for_obs_dir 
+        predictor_name = f'{predictandname}_predictors.h5'
+    elif use_jmeasure: # jmeasure, still objective
+        predictor_dir = Path('/nobackup/users/straaten/predsets/jmeasure/')
+        predictor_name = f'{predictandname}_jmeasure_predictors.h5'
+    else: # sequential forward
+        predictor_dir = Path('/nobackup/users/straaten/predsets/objective_balanced_cv/')
+        predictor_name = f'{predictandname}_multi_d20_b3_predictors.h5'
+    predictors = pd.read_hdf(predictor_dir / predictor_name, key = 'input').iloc[:,slice(npreds)]
+    forc = pd.read_hdf(for_obs_dir / f'{predictandname}_forc.h5', key = 'input')
+    obs= pd.read_hdf(for_obs_dir / f'{predictandname}_obs.h5', key = 'target')
+    
+    # Splitting the sets.
+    X_test, X_trainval, generator = test_trainval_split(predictors, crossval = True, nfolds = 3, balanced = True)
+    forc_test, forc_trainval, generator = test_trainval_split(forc, crossval = True, nfolds = 3, balanced = True)
+    obs_test, obs_trainval, generator = test_trainval_split(obs, crossval = True, nfolds = 3, balanced = True)
+
+    # Prepare trainval data for the neural network (conversions to np.ndarray)
+    features_trainval, feature_scaler = scale_other_features(X_trainval)
+    logforc_trainval = multiclass_log_forecastprob(forc_trainval)
+    obsinp_trainval = obs_trainval.values
+
+    # Preparing the test set (conversions to np.ndarray)
+    features_test, _ = scale_other_features(X_test, fitted_scaler=feature_scaler)
+    logforc_test = multiclass_log_forecastprob(forc_test)
+    obsinp_test = obs_test.values
+
+    DEFAULT_CONSTRUCT.update(n_classes = obs_trainval.shape[-1], n_features = features_trainval.shape[-1])
+    DEFAULT_COMPILE['metrics'] = ['accuracy',BrierScore(class_index = focus_class)]
+
+    constructor = ConstructorAndCompiler(construct_modeldev_model, DEFAULT_CONSTRUCT, DEFAULT_COMPILE)
+
+    data = PreparedData()
+    data.add_data(name = 'raw', predictors = predictors, obs = obs, forc = forc)
+    data.add_data(name = 'crossval', X_trainval = X_trainval, X_test = X_test, 
+            forc_trainval = forc_trainval, forc_test = forc_test, 
+            obs_trainval = obs_trainval, obs_test = obs_test, 
+            generator = generator)
+    data.add_data(name = 'neural', trainval_inputs = [features_trainval, logforc_trainval], trainval_output = obsinp_trainval, test_inputs = [features_test, logforc_test], test_output = obsinp_test)
+
+    return data, constructor

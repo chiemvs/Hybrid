@@ -14,7 +14,8 @@ from sklearn.metrics import roc_auc_score
 from pathlib import Path
 from typing import Callable, Union, List
 
-from .dataprep import test_trainval_split, multiclass_log_forecastprob, scale_other_features, scale_time, binarize_hotday_predictand, singleclass_regression # We do not use base-exceedence from Weave.models because the scaler is hidden
+from .dataprep import test_trainval_split, default_prep, scale_time, binarize_hotday_predictand, singleclass_regression # We do not use base-exceedence from Weave.models because the scaler is hidden
+from .neuralnet import DEFAULT_FIT
 
 sys.path.append(os.path.expanduser('~/Documents/SubSeas'))
 from observations import Climatology
@@ -188,61 +189,32 @@ def load_compute_rank(bookfile: str, return_bias: bool = False):
 
 def build_fit_nn_model(predictandname, add_trend: bool = True, npreds: int = None, use_jmeasure: bool = False, return_separate_test: bool = True):
     """
-    Uses the default settings
-    Like a predetermined objective set (either jmeasure or sequential forward if npreds is given )
-    """
-    from Hybrid.neuralnet import construct_modeldev_model, BrierScore, ConstructorAndCompiler, DEFAULT_CONSTRUCT, DEFAULT_COMPILE, DEFAULT_FIT
-
-    for_obs_dir = Path('/nobackup/users/straaten/predsets/full/') 
-    if use_jmeasure: # jmeasure, still objective
-        signature = 'jm'
-        predictor_dir = Path('/nobackup/users/straaten/predsets/jmeasure/')
-        predictor_name = f'{predictandname}_jmeasure_predictors.h5'
-    else: # sequential forward
-        signature = 'sf'
-        predictor_dir = Path('/nobackup/users/straaten/predsets/objective_balanced_cv/')
-        predictor_name = f'{predictandname}_multi_d20_b3_predictors.h5'
-    predictors = pd.read_hdf(predictor_dir / predictor_name, key = 'input').iloc[:,slice(npreds)]
-    forc = pd.read_hdf(for_obs_dir / f'{predictandname}_forc.h5', key = 'input')
-    obs= pd.read_hdf(for_obs_dir / f'{predictandname}_obs.h5', key = 'target')
-    
+    Uses the default data preparation (from dataprep), then fits a default model
+    """ 
     focus_class = -1
+    prepared_data, constructor = default_prep(predictandname = predictandname, npreds = npreds, use_jmeasure = use_jmeasure, focus_class = focus_class)
+    if use_jmeasure:
+        signature = 'jm'
+    else:
+        signature = 'sf'
     # Some climatological information, could for tganom predictands also be derived from the name.
     # But not for tg-ex
-    climprob = obs.mean(axis = 0).iloc[focus_class]
-
-    # Splitting the sets.
-    X_test, X_trainval, generator = test_trainval_split(predictors, crossval = True, nfolds = 3, balanced = True)
-    forc_test, forc_trainval, generator = test_trainval_split(forc, crossval = True, nfolds = 3, balanced = True)
-    obs_test, obs_trainval, generator = test_trainval_split(obs, crossval = True, nfolds = 3, balanced = True)
-
-    # Prepare trainval data for the neural network
-    features_trainval, feature_scaler = scale_other_features(X_trainval)
-    logforc_trainval = multiclass_log_forecastprob(forc_trainval)
-    obsinp_trainval = obs_trainval.values
-
-    # Preparing the test set
-    features_test, _ = scale_other_features(X_test, fitted_scaler=feature_scaler)
-    logforc_test = multiclass_log_forecastprob(forc_test)
-
-    DEFAULT_CONSTRUCT.update(n_classes = obs_trainval.shape[-1], n_features = features_trainval.shape[-1])
-    DEFAULT_COMPILE['metrics'] = ['accuracy',BrierScore(class_index = focus_class)]
-
-    constructor = ConstructorAndCompiler(construct_modeldev_model, DEFAULT_CONSTRUCT, DEFAULT_COMPILE)
+    climprob = prepared_data.raw.obs.mean(axis = 0).iloc[-1]
 
     # Training the model
     model = constructor.fresh_model()
-    model.fit(x = [features_trainval, logforc_trainval], y=obsinp_trainval, validation_split = 0.33, **DEFAULT_FIT)
+    model.fit(x = prepared_data.neural.trainval_inputs, y=prepared_data.neural.trainval_output, validation_split = 0.33, **DEFAULT_FIT)
     
     # Generating model predictions:
-    preds_test = model.predict(x = [features_test, logforc_test])
-    preds_trainval = model.predict(x = [features_trainval, logforc_trainval])
+    preds_test = model.predict(x = prepared_data.neural.test_inputs)
+    preds_trainval = model.predict(x = prepared_data.neural.trainval_inputs)
 
-    total = pd.DataFrame({'pi': np.concatenate([forc_trainval, forc_test])[:,focus_class], 
+    total = pd.DataFrame({'pi': np.concatenate([prepared_data.crossval.forc_trainval, prepared_data.crossval.forc_test])[:,focus_class], 
             f'pp{signature}':np.concatenate([preds_trainval, preds_test])[:,focus_class],
-            'climatology':climprob}, index = forc_trainval.index.union(forc_test.index, sort = False))
+            'climatology':climprob}, index = prepared_data.crossval.forc_trainval.index.union(prepared_data.crossval.forc_test.index, sort = False))
 
-    total['observation'] = np.concatenate([obs_trainval, obs_test])[:,focus_class]
+    total['observation'] = np.concatenate([prepared_data.crossval.obs_trainval, prepared_data.crossval.obs_test])[:,focus_class]
+    # Add extra index level to match the levels of non-post-processed tganom or tgex sets
     total.index = pd.MultiIndex.from_frame(total.index.to_frame().assign(clustid = 9))
 
     # Training a trend benchmark model, and generating scale test time input
@@ -252,7 +224,7 @@ def build_fit_nn_model(predictandname, add_trend: bool = True, npreds: int = Non
     total = compute_bs(total)
     
     if return_separate_test:
-        return total, total.iloc[total.index.droplevel(-1).get_indexer(X_test.index),:].copy()
+        return total, total.iloc[total.index.droplevel(-1).get_indexer(prepared_data.crossval.obs_test.index),:].copy()
     else:
         return total
 

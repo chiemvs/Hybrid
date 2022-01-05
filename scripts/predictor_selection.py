@@ -10,43 +10,34 @@ from typing import Tuple, List, Union
 from PermutationImportance.sequential_selection import sequential_forward_selection
 
 sys.path.append(os.path.expanduser('~/Documents/Hybrid/'))
-from Hybrid.neuralnet import construct_modeldev_model, construct_climdev_model, earlystop, ConstructorAndCompiler
-from Hybrid.dataprep import test_trainval_split, multiclass_logistic_regression_coefficients, scale_other_features, multiclass_log_forecastprob, GroupedGenerator
+from Hybrid.neuralnet import DEFAULT_FIT, DEFAULT_COMPILE, ConstructorAndCompiler, construct_modeldev_model
+from Hybrid.dataprep import default_prep
 from Hybrid.optimization import multi_fit_single_eval, multi_fit_multi_eval
 
 sys.path.append(os.path.expanduser('~/Documents/Weave/'))
 from Weave.utils import collapse_restore_multiindex
 
-opendir = Path('/nobackup/users/straaten/predsets/full/')
 savedir = Path('/nobackup/users/straaten/predsets/objective_balanced_cv/')
 #savename = f'tg-ex-q0.75-21D_ge7D_sep19-21'
 #savename = f'tg-ex-q0.75-21D_ge7D_sep12-15'
 #savename = f'tg-ex-q0.75-21D_ge5D_sep12-15'
 quantile = 0.5
 timeagg = 31
-#savename = f'tg-anom_JJA_45r1_{timeagg}D-roll-mean_q{quantile}_sep12-15'
-predictors = pd.read_hdf(opendir / f'{savename}_predictors.h5', key = 'input')
-forc = pd.read_hdf(opendir / f'{savename}_forc.h5', key = 'input')
-obs = pd.read_hdf(opendir / f'{savename}_obs.h5', key = 'target')
+savename = f'tg-anom_JJA_45r1_{timeagg}D-roll-mean_q{quantile}_sep12-15'
 
-crossval = True
-balanced = True # Whether to use the balanced (hot dry years) version of crossvaldation. Folds are non-consecutive but still split by year. keyword ignored if crossval == False
-crossval_scaling = True # Wether to do also minmax scaling in cv mode
-nfolds = 3
+crossval_scaling = False # Wether to do also minmax scaling in cv mode
 
-X_test, X_trainval, generator = test_trainval_split(predictors, crossval = crossval, nfolds = nfolds, balanced = balanced)
-forc_test, forc_trainval, generator = test_trainval_split(forc, crossval = crossval, nfolds = nfolds, balanced = balanced)
-obs_test, obs_trainval, generator = test_trainval_split(obs, crossval = crossval, nfolds = nfolds, balanced = balanced)
-
-
-climprobkwargs, time_input, time_scaler = multiclass_logistic_regression_coefficients(obs_trainval) # If multiclass will return the coeficients for all 
+# With npreds = None all predictors are read, model needs to be reconfigured dynamically so no need to accept the default constructor
+prepared_data, _ = default_prep(predictandname = savename, npreds = None)
+# This prepared data has scaled trainval features, which we cannot scale again in cv mode, therefore replace with unscaled if neccesary
 if crossval_scaling:
-    feature_input = X_trainval.values
+    feature_input = prepared_data.crossval.X_trainval.values
 else:
-    feature_input, feature_scaler = scale_other_features(X_trainval)
-obs_input = obs_trainval.copy().values
-raw_predictions = multiclass_log_forecastprob(forc_trainval)
-
+    feature_input = prepared_data.neural.trainval_inputs[0] # These are prescaled. In same list as logforc
+# Extract remaining neccesary data
+generator = prepared_data.crossval.generator
+logforc_trainval = prepared_data.neural.trainval_inputs[-1]
+obsinp_trainval = prepared_data.neural.trainval_output
 
 def score_model(training_data: Tuple[np.ndarray,np.ndarray], scoring_data: tuple = None) -> float:
     """
@@ -55,13 +46,13 @@ def score_model(training_data: Tuple[np.ndarray,np.ndarray], scoring_data: tuple
     contains the mixture of train and val
     training data gets manipulated by PermutationImportance so these contain only the features
     not the time_input or the logistic forc
-    when crossvalidation we can disregard scoring_data
+    when crossvalidation we can disregard scoring_data (though it will be fed by permutation importance)
     also with SingleGenerator we can ignore it
     """
     g = copy(generator) # Such that when evaluated in parallel the iterators do not reset each other
     feature_trainval, y_trainval = training_data
     n_predictors = feature_trainval.shape[-1]
-    # Scaling the complexity with the amount of inputs to the model
+    # Dynamically adjust the complexity with the amount of inputs to the model
     if n_predictors == 1:
         nhidden = 1
         nhidden_nodes = 2 
@@ -77,18 +68,13 @@ def score_model(training_data: Tuple[np.ndarray,np.ndarray], scoring_data: tuple
             n_features = n_predictors,
             n_hiddenlayer_nodes = nhidden_nodes)
     
-    compile_kwargs = dict(optimizer=tf.keras.optimizers.Adam(learning_rate=0.0014))
+    constructor = ConstructorAndCompiler(construct_modeldev_model, construct_kwargs, DEFAULT_COMPILE)
     
-    constructor = ConstructorAndCompiler(construct_modeldev_model, construct_kwargs, compile_kwargs)
-    
-    fit_kwargs = dict(batch_size = 32, 
-            epochs = 40, # 200
-            shuffle = True,
-            callbacks = [earlystop(7)])
+    DEFAULT_FIT.update({'epochs':40}) # Bit less epochs to speed up evaluations
 
     scores = np.repeat(np.nan, n_eval)
     for i in range(n_eval):  # Possibly later in parallel
-        score, histories = multi_fit_single_eval(constructor, X_trainval = (feature_trainval, raw_predictions), y_trainval = y_trainval, generator = g, fit_kwargs = fit_kwargs, return_predictions = False, scale_cv_mode = crossval_scaling) # Scores with RPS
+        score, histories = multi_fit_single_eval(constructor, X_trainval = (feature_trainval, logforc_trainval), y_trainval = y_trainval, generator = g, fit_kwargs = DEFAULT_FIT, return_predictions = False, scale_cv_mode = crossval_scaling) # Scores with RPS
     # for SingleGenerator nans are written in multi_fit_single_eval when doing only one fold. Therefore handled in the single_eval
         #results = multi_fit_multi_eval(constructor, X_trainval = (feature_trainval, raw_predictions), y_trainval = y_trainval, generator = g, fit_kwargs = fit_kwargs, scale_cv_mode = crossval_scaling) # Scores with loss
         #score = np.max(results.loc[(slice(None),'val'),:].values)
@@ -102,9 +88,9 @@ def score_model(training_data: Tuple[np.ndarray,np.ndarray], scoring_data: tuple
 
 n_eval = 3 # Shuffling and random weight initialization lead to randomness, possibility to use multiple evaluations
 depth = 20
-#test2 = score_model((feature_input[:,:10],obs_input))
-newframe, oldlevels, olddtypes = collapse_restore_multiindex(X_test, axis = 1, inplace = False) # extracting names
-result = sequential_forward_selection(training_data = (feature_input[:,:],obs_input), scoring_data = (feature_input[:,:],obs_input), scoring_fn = score_model, scoring_strategy = 'min', nimportant_vars = depth, variable_names=newframe.columns[:], njobs = 1)
+
+newframe, oldlevels, olddtypes = collapse_restore_multiindex(prepared_data.crossval.X_test, axis = 1, inplace = False) # extracting names
+result = sequential_forward_selection(training_data = (feature_input[:,:],obsinp_trainval), scoring_data = (feature_input[:,:],obsinp_trainval), scoring_fn = score_model, scoring_strategy = 'min', nimportant_vars = depth, variable_names=newframe.columns[:], njobs = 1)
 
 singlepass = result.retrieve_singlepass()
 multipass = result.retrieve_multipass()
@@ -115,8 +101,8 @@ singleresult.to_csv(savedir / f'{savename}_single_d{depth}_b{n_eval}.csv')
 multiresult = pd.DataFrame(multipass, index = ['rank','rps'])
 multiresult.to_csv(savedir / f'{savename}_multi_d{depth}_b{n_eval}.csv')
 
-multisubset = predictors.iloc[:,newframe.columns.get_indexer(multiresult.columns)] # ordered by rank
+multisubset = prepared_data.raw.predictors.iloc[:,newframe.columns.get_indexer(multiresult.columns)] # ordered by rank
 multisubset.to_hdf(savedir / f'{savename}_multi_d{depth}_b{n_eval}_predictors.h5', key = 'input')
 
-singlesubset = predictors.iloc[:,newframe.columns.get_indexer(singleresult.columns)] # ordered by rank
+singlesubset = prepared_data.raw.predictors.iloc[:,newframe.columns.get_indexer(singleresult.columns)] # ordered by rank
 singlesubset.to_hdf(savedir / f'{savename}_single_d{depth}_b{n_eval}_predictors.h5', key = 'input')
