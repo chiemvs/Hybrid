@@ -232,7 +232,6 @@ def reduce_to_ranks(df):
     """
     Reduce the whole frame to rankings (one per score)
     so make sure you supply the homogeneous set
-
     """
     df = df.copy()
     if df.columns.nlevels == 2:
@@ -244,4 +243,25 @@ def reduce_to_ranks(df):
             ranks = df.iloc[:,cols].mean().rank(ascending = ascending) # Highest rank = best
             ranks.index = pd.MultiIndex.from_product([[scorename],[s.split('_')[0] for s in ranks.index]], names = ['score','forecast'])
             returns.append(ranks)
+    return pd.concat(returns, axis = 0)
+
+def reduce_to_skill(df):
+    """
+    Reduces the whole frame to skill scores
+    (First average then normalize)
+    The benchmark is the climatology
+    Kuipers is already a skillscore basically (sperf = 1, sref_climatology = 0)
+    """
+    df = df.copy()
+    if df.columns.nlevels == 2:
+        df.columns = df.columns.droplevel(-1)
+    returns = []
+    for scorename, score_perf in zip(['bs','auc','kss'],[0,1,1]):
+        cols = df.columns.str.endswith(scorename)
+        if cols.any():
+            meanscore = df.iloc[:,cols].mean()
+            score_ref = meanscore.loc[f'climatology_{scorename}']
+            skillscore = (score_ref - meanscore)/(score_ref - score_perf) 
+            skillscore.index = pd.MultiIndex.from_product([[scorename],[s.split('_')[0] for s in skillscore.index]], names = ['score','forecast'])
+            returns.append(skillscore)
     return pd.concat(returns, axis = 0)
