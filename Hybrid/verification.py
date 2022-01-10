@@ -95,12 +95,12 @@ def compute_bss(df):
     """
     bs_cols = df.columns.get_level_values(0).str.endswith('bs')
     mean_bs = df.iloc[:,bs_cols].groupby(['separation','clustid']).mean() # Mean over time
-    if means_bs.columns.nlevels == 2:
+    if mean_bs.columns.nlevels == 2:
         mean_bs.columns = mean_bs.columns.droplevel('number')
     for key in ['pi','ppsf','ppjm']:
         try:
-            mean_bs[f'{key}_climatology_bss'] = 1 - mean_bs['{key}_bs'] / mean_bs['climatology_bs']
-            mean_bs[f'{key}_trend_bss'] = 1 - mean_bs['{key}_bs'] / mean_bs['trend_bs']
+            mean_bs[f'{key}_climatology_bss'] = 1 - mean_bs[f'{key}_bs'] / mean_bs['climatology_bs']
+            mean_bs[f'{key}_trend_bss'] = 1 - mean_bs[f'{key}_bs'] / mean_bs['trend_bs']
         except KeyError:
             pass
     return mean_bs.iloc[:,mean_bs.columns.str.endswith('bss')]

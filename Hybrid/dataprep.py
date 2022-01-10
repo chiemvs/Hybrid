@@ -15,7 +15,7 @@ from sklearn.preprocessing import MinMaxScaler
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import StratifiedKFold
 
-from .neuralnet import construct_modeldev_model, BrierScore, ConstructorAndCompiler, DEFAULT_CONSTRUCT, DEFAULT_COMPILE, DEFAULT_FIT
+from .neuralnet import construct_modeldev_model, BrierScore, ConstructorAndCompiler, DEFAULT_CONSTRUCT, DEFAULT_COMPILE
 
 THREEFOLD_DIVISION = pd.Series([ 0,1,2,1,1,2,2,0,1,0,0,1,1,2,0,99,2,99,99,2,0,99], index = pd.RangeIndex(1998,2020, name = 'year')) # Generated with generate_balanced_kfold with forecasts > 7 hot days in 21 day period, leadtime = 19-21. 99 is the test class.. [0,1,2,0,1,2,0,2,1,0,1,2,0,1,2,99,99,99,2,1,0,99] was based on the old Excel balancing
 
@@ -223,16 +223,14 @@ def filter_predictor_set(predset: pd.DataFrame, observation: pd.Series, how: Cal
         fraction_y0 = np.unique(hist_y0, return_counts = True)[-1] / len(hist_y0)
         measures.loc[key] = how(fraction_y1, fraction_y0)
 
-    ranked = measures.rank(method = 'first') # 1 to n (lowest to highest value)
     if how == j_measure: # Higher means more discriminatory power
-        important = ranked > (len(ranked) - nmost_important)
+        ordered = measures.sort_values(ascending = False)
     else: # perkins: lower (less overlap) = more dcriminatory power
-        important = ranked <= nmost_important 
-    keys = important.iloc[important.values].index
+        ordered = measures.sort_values(ascending = True)
     if return_measures:
-        return predset.loc[:,keys], measures
+        return predset.loc[:,ordered.index[:nmost_important]], measures
     else:
-        return predset.loc[:,keys]
+        return predset.loc[:,ordered.index[:nmost_important]]
     
 """
 Functions for prepping data for the specific neural nets 
