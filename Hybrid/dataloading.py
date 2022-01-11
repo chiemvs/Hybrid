@@ -161,7 +161,7 @@ def prepare_full_set(predictand_name, ndaythreshold: Union[List[int],int], predi
     """
     simple_dynamical_set = pd.DataFrame({'booksname':[
         'books_paper3-3-simple_swvl4-anom_JJA_45r1_21D-roll-mean_1-swvl-simple-mean.csv',
-        'books_paper3-3-simple_swvl13-anom_JJA_45r1_14D-roll-mean_1-swvl-simple-mean.csv',
+        'books_paper3-3-simple_swvl13-anom_JJA_45r1_21D-roll-mean_1-swvl-simple-mean.csv',
         'books_paper3-3-simple_z-anom_JJA_45r1_21D-roll-mean_1-swvl-simple-mean.csv',
         'books_paper3-3-simple_sst-anom_JJA_45r1_21D-roll-mean_1-sst-simple-mean.csv',
         'books_paper3-4-4regimes_z-anom_JJA_45r1_21D-frequency_ids.csv',
@@ -173,7 +173,7 @@ def prepare_full_set(predictand_name, ndaythreshold: Union[List[int],int], predi
         read_raw_predictor_ensmean,
         read_raw_predictor_regimes,
         ],
-        'timeagg':[21,14,21,21,21],
+        'timeagg':[21,21,21,21,21],
         'metric':['mean','mean','mean','mean','freq'],
         }, index = ['swvl4','swvl13','z','sst','z-reg'])
 
