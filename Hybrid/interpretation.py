@@ -6,7 +6,7 @@ import pandas as pd
 import tensorflow as tf
 
 from sklearn.metrics import pairwise_distances
-from typing import Callable, Union, List
+from typing import Callable, Union, List, Tuple
 from types import MethodType
 
 try:
@@ -70,7 +70,7 @@ def gradient(model: tf.keras.Model, feature_inputs: np.ndarray, target_fn: Calla
     else:
         return grad
 
-def kernel_shap(model: tf.keras.Model, feature_inputs: np.ndarray, to_explain: slice = slice(None), additional_inputs: np.ndarray = None, target_class: int = slice(None)) -> Union[List[np.ndarray], np.ndarray]:
+def kernel_shap(model: tf.keras.Model, feature_inputs: np.ndarray, to_explain: slice = slice(None), additional_inputs: np.ndarray = None, target_class: int = -1, shapkwargs: dict = {}) -> Tuple[float, np.ndarray]:
     """
     Employ model agnostic Kernel Shap, to provide explanations (n_samples_to_explain, n_features)
     that add up to 
@@ -92,15 +92,16 @@ def kernel_shap(model: tf.keras.Model, feature_inputs: np.ndarray, to_explain: s
         model.predfunc = model.predict 
     if single_input.shape[0] > 300:
         warnings.warn('more than 300 samples detected, summarizing background dataset with shap.kmeans')
-        explainer = shap.KernelExplainer(model = model.predfunc, data = shap.kmeans(single_input, k = 8), link="identity")
+        explainer = shap.KernelExplainer(model = model.predfunc, data = shap.kmeans(single_input, k = 30), link="identity")
     else:
         explainer = shap.KernelExplainer(model = model.predfunc, data = single_input, link="identity") # data = background data
-    shap_values = explainer.shap_values(single_input[to_explain,:], nsamples=100) # For a two-class model this is a list with two matrices
+    expected_values = explainer.expected_value # Also two classes
+    shap_values = explainer.shap_values(single_input[to_explain,:], nsamples=100, **shapkwargs) # For a two-class model this is a list with two matrices
     if not model.is_submodel:
         # The explanations need to be split again to the feature_inputs and additional_inputs separately 
         for i, explanationblock in enumerate(shap_values): # Looping over classes
             shap_values[i] = [explanationblock[:,:-additional_size], explanationblock[:,-additional_size:]] 
-    return shap_values[target_class]
+    return expected_values[target_class], shap_values[target_class]
 
 def order_by_hierachical_clustering(explanations: pd.DataFrame) -> pd.DataFrame:
     """
