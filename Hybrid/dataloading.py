@@ -161,9 +161,13 @@ def prepare_full_set(predictand_name, ndaythreshold: Union[List[int],int], predi
     """
     simple_dynamical_set = pd.DataFrame({'booksname':[
         'books_paper3-3-simple_swvl4-anom_JJA_45r1_21D-roll-mean_1-swvl-simple-mean.csv',
+        'books_paper3-3-simple_swvl4-anom_JJA_45r1_31D-roll-mean_1-swvl-simple-mean.csv',
         'books_paper3-3-simple_swvl13-anom_JJA_45r1_21D-roll-mean_1-swvl-simple-mean.csv',
+        'books_paper3-3-simple_swvl13-anom_JJA_45r1_31D-roll-mean_1-swvl-simple-mean.csv',
         'books_paper3-3-simple_z-anom_JJA_45r1_21D-roll-mean_1-swvl-simple-mean.csv',
+        'books_paper3-3-simple_z-anom_JJA_45r1_31D-roll-mean_1-swvl-simple-mean.csv',
         'books_paper3-3-simple_sst-anom_JJA_45r1_21D-roll-mean_1-sst-simple-mean.csv',
+        'books_paper3-3-simple_sst-anom_JJA_45r1_31D-roll-mean_1-sst-simple-mean.csv',
         'books_paper3-4-4regimes_z-anom_JJA_45r1_21D-frequency_ids.csv',
         ],
         'readfunc':[
@@ -171,23 +175,27 @@ def prepare_full_set(predictand_name, ndaythreshold: Union[List[int],int], predi
         read_raw_predictor_ensmean,
         read_raw_predictor_ensmean,
         read_raw_predictor_ensmean,
+        read_raw_predictor_ensmean,
+        read_raw_predictor_ensmean,
+        read_raw_predictor_ensmean,
+        read_raw_predictor_ensmean,
         read_raw_predictor_regimes,
         ],
-        'timeagg':[21,21,21,21,21],
-        'metric':['mean','mean','mean','mean','freq'],
-        }, index = ['swvl4','swvl13','z','sst','z-reg'])
+        'timeagg':[21,31,21,31,21,31,21,31,21],
+        'metric':['mean','mean','mean','mean','mean','mean','mean','mean','freq'],
+        }, index = pd.MultiIndex.from_tuples([('swvl4',21),('swvl4',31),('swvl13',21),('swvl13',31),('z',21),('z',31),('sst',21),('sst',31),('z-reg',21)]))
 
     dynamical_predictors = [] 
-    for var in simple_dynamical_set.index:
-        readfunc = simple_dynamical_set.loc[var,'readfunc']
+    for var, timeagg in simple_dynamical_set.index:
+        readfunc = simple_dynamical_set.loc[(var,timeagg),'readfunc']
         predictor = readfunc(
-                booksname = simple_dynamical_set.loc[var,'booksname'], 
+                booksname = simple_dynamical_set.loc[(var,timeagg),'booksname'], 
                 clustid = slice(None),
                 separation = leadtimepool)
         annotate_raw_predictor(predictor, 
                 variable = var, 
-                timeagg = simple_dynamical_set.loc[var,'timeagg'],
-                metric = simple_dynamical_set.loc[var,'metric'])
+                timeagg = simple_dynamical_set.loc[(var,timeagg),'timeagg'],
+                metric = simple_dynamical_set.loc[(var,timeagg),'metric'])
         dynamical_predictors.append(predictor)
     dynamical_predictors = pd.concat(dynamical_predictors, join = 'inner', axis = 1)
 

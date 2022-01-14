@@ -18,7 +18,7 @@ from Hybrid.dataloading import prepare_full_set, read_raw_predictand, read_tgano
 
 leadtimepool = list(range(12,16)) #list(range(12,16)) #list(range(19,22)) #[7,8,9,10,11,12,13] #[10,11,12,13,14,15] #[15,16,17,18,19,20,21] # From the longest leadtimepool is taken
 target_region = 9 
-ndaythreshold = 11 #[3,7] #7 #[4,9] Switch to list for multiclass (n>2) predictions
+ndaythreshold = 5 #[3,7] #7 #[4,9] Switch to list for multiclass (n>2) predictions
 focus_class = -1 # Index of the class to be scored and benchmarked through bss
 multi_eval = True # Single aggregated score or one per fold
 preload = False
@@ -32,23 +32,24 @@ targetname = 'books_paper3-2_tg-ex-q0.75-21D_JJA_45r1_1D_15-t2m-q095-adapted-mea
 predictors, forc, obs = prepare_full_set(targetname, ndaythreshold = ndaythreshold, predictand_cluster = target_region, leadtimepool = leadtimepool)
 # In case of predictand substitution
 quantile = 0.5
-timeagg = 21
+timeagg = 31
 if preload: # For instance a predictor set coming from 
-    loadpath = f'/nobackup/users/straaten/predsets/objective_balanced_cv/tg-ex-q0.75-21D_ge{ndaythreshold}D_sep12-15_multi_d20_b3_predictors.h5'
-    #loadpath = f'/nobackup/users/straaten/predsets/objective_balanced_cv/tg-anom_JJA_45r1_{timeagg}D-roll-mean_q{quantile}_sep12-15_multi_d20_b3_predictors.h5'
-    predictors = pd.read_hdf(loadpath, key = 'input').iloc[:,:8]
+    #loadpath = f'/nobackup/users/straaten/predsets/objective_balanced_cv/tg-ex-q0.75-21D_ge{ndaythreshold}D_sep12-15_multi_d20_b3_predictors.h5'
+    loadpath = f'/nobackup/users/straaten/predsets/objective_balanced_cv/tg-anom_JJA_45r1_{timeagg}D-roll-mean_q{quantile}_sep12-15_multi_d20_b3_predictors.h5'
+    #loadpath = f'/nobackup/users/straaten/predsets/objective_balanced_cv/tg-anom_JJA_45r1_31D-roll-mean_q{quantile}_sep12-15_multi_d20_b3_predictors.h5'
+    predictors = pd.read_hdf(loadpath, key = 'input').iloc[:,:4]
 
 
 """
 Predictand replacement with tg-anom, [21D, 31D] > [q0.5,q0.66,q0.75,q0.9]
 Quite involved because thresholds need to be matched
 """
-tganom_name = f'books_paper3-1_tg-anom_JJA_45r1_{timeagg}D-roll-mean_15-t2m-q095-adapted-mean.csv'
-climname = f'tg-anom_clim_1998-06-07_2019-10-31_{timeagg}D-roll-mean_15-t2m-q095-adapted-mean_15_15_q{quantile}'
-modelclimname = f'tg-anom_45r1_1998-06-07_2019-08-31_{timeagg}D-roll-mean_15-t2m-q095-adapted-mean_15_15_q{quantile}'
-
-tgobs, tgforc = read_tganom_predictand(booksname = tganom_name, clustid = target_region, separation = leadtimepool, climname = climname, modelclimname = modelclimname) 
-forc, obs = tgforc.loc[forc.index,:], tgobs.loc[forc.index,:]
+#tganom_name = f'books_paper3-1_tg-anom_JJA_45r1_{timeagg}D-roll-mean_15-t2m-q095-adapted-mean.csv'
+#climname = f'tg-anom_clim_1998-06-07_2019-10-31_{timeagg}D-roll-mean_15-t2m-q095-adapted-mean_15_15_q{quantile}'
+#modelclimname = f'tg-anom_45r1_1998-06-07_2019-08-31_{timeagg}D-roll-mean_15-t2m-q095-adapted-mean_15_15_q{quantile}'
+#
+#tgobs, tgforc = read_tganom_predictand(booksname = tganom_name, clustid = target_region, separation = leadtimepool, climname = climname, modelclimname = modelclimname) 
+#forc, obs = tgforc.loc[forc.index,:], tgobs.loc[forc.index,:]
 
 
 """
@@ -96,19 +97,18 @@ if not preload:
     #final_trainval = X_trainval.loc[:,dynamic_cols] #jfilter_det
     #final_trainval = jfilter_det
     #final_trainval = X_trainval.drop(dynamic_cols, axis = 1)
-    #final_trainval = X_trainval.loc[:,~X_trainval.columns.get_loc_level(-1, 'clustid')[0]] # Throw away the unclassified
-    final_trainval = jfilter
+    final_trainval = X_trainval.loc[:,~X_trainval.columns.get_loc_level(-1, 'clustid')[0]] # Throw away the unclassified
    
     """
     optionally Saving full set for later
     """
     #savedir = Path('/nobackup/users/straaten/predsets/full/')
-    #savedir = Path('/nobackup/users/straaten/predsets/jmeasure/')
+    #savedir2 = Path('/nobackup/users/straaten/predsets/jmeasure/')
     #savename = f'tg-ex-q0.75-21D_ge{ndaythreshold}D_sep{leadtimepool[0]}-{leadtimepool[-1]}'
     #savename = f'tg-anom_JJA_45r1_{timeagg}D-roll-mean_q{quantile}_sep{leadtimepool[0]}-{leadtimepool[-1]}'
     ###savename = f'regimes_z-anom_JJA_45r1_21D-frequency_sep{leadtimepool[0]}-{leadtimepool[-1]}'
     #predictors.loc[:,final_trainval.columns].to_hdf(savedir / f'{savename}_predictors.h5', key = 'input')
-    #predictors.loc[:,final_trainval.columns].to_hdf(savedir / f'{savename}_jmeasure_predictors.h5', key = 'input')
+    #predictors.loc[:,jfilter.columns].to_hdf(savedir2 / f'{savename}_jmeasure_predictors.h5', key = 'input')
     #forc.to_hdf(savedir / f'{savename}_forc.h5', key = 'input')
     #obs.to_hdf(savedir / f'{savename}_obs.h5', key = 'target')
 else:
