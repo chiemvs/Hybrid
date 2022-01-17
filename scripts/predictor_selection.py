@@ -72,6 +72,7 @@ def score_model(training_data: Tuple[np.ndarray,np.ndarray], scoring_data: tuple
     constructor = ConstructorAndCompiler(construct_modeldev_model, construct_kwargs, DEFAULT_COMPILE)
     
     DEFAULT_FIT.update({'epochs':40}) # Bit less epochs to speed up evaluations
+    DEFAULT_FIT.update({'verbose':0}) # No verbosity when running on the cluster with stdout to file 
 
     scores = np.repeat(np.nan, n_eval)
     for i in range(n_eval):  # Possibly later in parallel
