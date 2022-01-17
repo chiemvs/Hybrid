@@ -374,7 +374,7 @@ class PreparedData(object):
         for key in kwargs.keys():
             setattr(getattr(self, name), key, kwargs[key])
 
-def default_prep(predictandname, npreds: int = None, use_jmeasure: bool = False, focus_class: int = -1) -> Tuple[PreparedData,ConstructorAndCompiler]:
+def default_prep(predictandname, npreds: int = None, use_jmeasure: bool = False, focus_class: int = -1, basedir: Path = Path('/nobackup/users/straaten/predsets/')) -> Tuple[PreparedData,ConstructorAndCompiler]:
     """
     Can only be used with a certain predictand when files have already been prepared
     It assumes a written (objectively selected for this specific predictand) predictor set 
@@ -383,16 +383,16 @@ def default_prep(predictandname, npreds: int = None, use_jmeasure: bool = False,
     and to setup the architecture corresponding to the input size (and nclasses of the predictand)
     which is returned in the form of a constructor
     """
-    for_obs_dir = Path('/nobackup/users/straaten/predsets/full/') 
+    for_obs_dir = basedir / 'full/'
     if npreds is None:
         print('reading full set, no objective selection')
         predictor_dir = for_obs_dir 
         predictor_name = f'{predictandname}_predictors.h5'
     elif use_jmeasure: # jmeasure, still objective
-        predictor_dir = Path('/nobackup/users/straaten/predsets/jmeasure/')
+        predictor_dir = basedir / 'jmeasure/'
         predictor_name = f'{predictandname}_jmeasure_predictors.h5'
     else: # sequential forward
-        predictor_dir = Path('/nobackup/users/straaten/predsets/objective_balanced_cv/')
+        predictor_dir = basedir / 'objective_balanced_cv/'
         predictor_name = f'{predictandname}_multi_d20_b3_predictors.h5'
     predictors = pd.read_hdf(predictor_dir / predictor_name, key = 'input').iloc[:,slice(npreds)]
     forc = pd.read_hdf(for_obs_dir / f'{predictandname}_forc.h5', key = 'input')
