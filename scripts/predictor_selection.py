@@ -10,27 +10,31 @@ from typing import Tuple, List, Union
 from PermutationImportance.sequential_selection import sequential_forward_selection
 
 sys.path.append(os.path.expanduser('~/Documents/Hybrid/'))
-from Hybrid.neuralnet import DEFAULT_FIT, DEFAULT_COMPILE, ConstructorAndCompiler, construct_modeldev_model
+from Hybrid.neuralnet import DEFAULT_FIT, DEFAULT_COMPILE, ConstructorAndCompiler, construct_modeldev_model, construct_climdev_model
 from Hybrid.dataprep import default_prep
 from Hybrid.optimization import multi_fit_single_eval, multi_fit_multi_eval
 
 sys.path.append(os.path.expanduser('~/Documents/Weave/'))
 from Weave.utils import collapse_restore_multiindex
 
-basedir = Path('/scistor/ivm/jsn295/backup/predsets/')
-#basedir = Path('/nobackup/users/straaten/predsets/')
-savedir = basedir / 'objective_balanced_cv/'
-ndaythreshold = 9
-savename = f'tg-ex-q0.75-21D_ge{ndaythreshold}D_sep12-15'
-#quantile = 0.75
-#timeagg = 21
-#savename = f'tg-anom_JJA_45r1_{timeagg}D-roll-mean_q{quantile}_sep12-15'
-
 crossval_scaling = True # Wether to do also minmax scaling in cv mode
+do_climdev = True # Whether to do climdev or modeldev
+
+#basedir = Path('/scistor/ivm/jsn295/backup/')
+basedir = Path(f'/nobackup/users/straaten/')
+basedir = basedir / f'{"clim" if do_climdev else ""}predsets/'
+savedir = basedir / 'objective_balanced_cv/'
+#ndaythreshold = 9
+#savename = f'tg-ex-q0.75-21D_ge{ndaythreshold}D_sep12-15'
+quantile = 0.5
+timeagg = 21
+savename = f'tg-anom_JJA_45r1_{timeagg}D-roll-mean_q{quantile}_sep12-15'
+
 
 # With npreds = None all predictors are read, model needs to be reconfigured dynamically so no need to accept the default constructor
 prepared_data, _ = default_prep(predictandname = savename, npreds = None, basedir = basedir)
 # This prepared data has scaled trainval features, which we cannot scale again in cv mode, therefore replace with unscaled if neccesary
+# NOTE: cv mode scaling/fitting does not happen for the climdev inputs (scaled time and climprobkwargs).
 if crossval_scaling:
     feature_input = prepared_data.crossval.X_trainval.values
 else:
@@ -38,6 +42,7 @@ else:
 # Extract remaining neccesary data
 generator = prepared_data.crossval.generator
 logforc_trainval = prepared_data.neural.trainval_inputs[-1]
+time_trainval = prepared_data.climate.time_trainval
 obsinp_trainval = prepared_data.neural.trainval_output
 
 def score_model(training_data: Tuple[np.ndarray,np.ndarray], scoring_data: tuple = None) -> float:
@@ -69,17 +74,21 @@ def score_model(training_data: Tuple[np.ndarray,np.ndarray], scoring_data: tuple
             n_features = n_predictors,
             n_hiddenlayer_nodes = nhidden_nodes)
     
-    constructor = ConstructorAndCompiler(construct_modeldev_model, construct_kwargs, DEFAULT_COMPILE)
+    if do_climdev:
+        construct_kwargs.update({'climprobkwargs':prepared_data.climate.climprobkwargs})
+        construct_func = construct_climdev_model 
+        X_trainval = (feature_trainval, time_trainval)
+    else:
+        construct_func = construct_modeldev_model
+        X_trainval = (feature_trainval, logforc_trainval)
+    constructor = ConstructorAndCompiler(construct_func, construct_kwargs, DEFAULT_COMPILE)
     
     DEFAULT_FIT.update({'epochs':40}) # Bit less epochs to speed up evaluations
     DEFAULT_FIT.update({'verbose':0}) # No verbosity when running on the cluster with stdout to file 
 
     scores = np.repeat(np.nan, n_eval)
     for i in range(n_eval):  # Possibly later in parallel
-        score, histories = multi_fit_single_eval(constructor, X_trainval = (feature_trainval, logforc_trainval), y_trainval = y_trainval, generator = g, fit_kwargs = DEFAULT_FIT, return_predictions = False, scale_cv_mode = crossval_scaling) # Scores with RPS
-    # for SingleGenerator nans are written in multi_fit_single_eval when doing only one fold. Therefore handled in the single_eval
-        #results = multi_fit_multi_eval(constructor, X_trainval = (feature_trainval, raw_predictions), y_trainval = y_trainval, generator = g, fit_kwargs = fit_kwargs, scale_cv_mode = crossval_scaling) # Scores with loss
-        #score = np.max(results.loc[(slice(None),'val'),:].values)
+        score, histories = multi_fit_single_eval(constructor, X_trainval = X_trainval, y_trainval = y_trainval, generator = g, fit_kwargs = DEFAULT_FIT, return_predictions = False, scale_cv_mode = crossval_scaling) # Scores with RPS
         g.reset()
         scores[i] = score
     return scores.mean()

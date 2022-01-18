@@ -408,6 +408,10 @@ def default_prep(predictandname, npreds: int = None, use_jmeasure: bool = False,
     logforc_trainval = multiclass_log_forecastprob(forc_trainval)
     obsinp_trainval = obs_trainval.values
 
+    # Also prepare inputs for the climate deviations setup
+    climprobkwargs, time_trainval, time_scaler = multiclass_logistic_regression_coefficients(obs_trainval) # If multiclass will return the coeficients for all 
+    time_test = time_scaler.transform(obs_test.index.get_level_values('time').to_julian_date()[:,np.newaxis])
+
     # Preparing the test set (conversions to np.ndarray)
     features_test, _ = scale_other_features(X_test, fitted_scaler=feature_scaler)
     logforc_test = multiclass_log_forecastprob(forc_test)
@@ -425,5 +429,6 @@ def default_prep(predictandname, npreds: int = None, use_jmeasure: bool = False,
             obs_trainval = obs_trainval, obs_test = obs_test, 
             generator = generator)
     data.add_data(name = 'neural', trainval_inputs = [features_trainval, logforc_trainval], trainval_output = obsinp_trainval, test_inputs = [features_test, logforc_test], test_output = obsinp_test)
+    data.add_data(name = 'climate', time_trainval = time_trainval, time_test = time_test, climprobkwargs = climprobkwargs)
 
     return data, constructor
