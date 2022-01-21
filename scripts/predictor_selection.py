@@ -18,7 +18,7 @@ sys.path.append(os.path.expanduser('~/Documents/Weave/'))
 from Weave.utils import collapse_restore_multiindex
 
 crossval_scaling = True # Wether to do also minmax scaling in cv mode
-do_climdev = True # Whether to do climdev or modeldev
+do_climdev = False # Whether to do climdev or modeldev
 
 #basedir = Path('/scistor/ivm/jsn295/backup/')
 basedir = Path(f'/nobackup/users/straaten/')
@@ -32,7 +32,7 @@ savename = f'tg-anom_JJA_45r1_{timeagg}D-roll-mean_q{quantile}_sep12-15'
 
 
 # With npreds = None all predictors are read, model needs to be reconfigured dynamically so no need to accept the default constructor
-prepared_data, _ = default_prep(predictandname = savename, npreds = None, basedir = basedir)
+prepared_data, _ = default_prep(predictandname = savename, npreds = None, basedir = basedir, prepare_climdev = do_climdev)
 # This prepared data has scaled trainval features, which we cannot scale again in cv mode, therefore replace with unscaled if neccesary
 # NOTE: cv mode scaling/fitting does not happen for the climdev inputs (scaled time and climprobkwargs).
 if crossval_scaling:
@@ -41,8 +41,7 @@ else:
     feature_input = prepared_data.neural.trainval_inputs[0] # These are prescaled. In same list as logforc
 # Extract remaining neccesary data
 generator = prepared_data.crossval.generator
-logforc_trainval = prepared_data.neural.trainval_inputs[-1]
-time_trainval = prepared_data.climate.time_trainval
+extra_inp_trainval = prepared_data.neural.trainval_inputs[-1] # Best guess information stream, either log of forecast or time for the logistic regression
 obsinp_trainval = prepared_data.neural.trainval_output
 
 def score_model(training_data: Tuple[np.ndarray,np.ndarray], scoring_data: tuple = None) -> float:
@@ -77,10 +76,8 @@ def score_model(training_data: Tuple[np.ndarray,np.ndarray], scoring_data: tuple
     if do_climdev:
         construct_kwargs.update({'climprobkwargs':prepared_data.climate.climprobkwargs})
         construct_func = construct_climdev_model 
-        X_trainval = (feature_trainval, time_trainval)
     else:
         construct_func = construct_modeldev_model
-        X_trainval = (feature_trainval, logforc_trainval)
     constructor = ConstructorAndCompiler(construct_func, construct_kwargs, DEFAULT_COMPILE)
     
     DEFAULT_FIT.update({'epochs':40}) # Bit less epochs to speed up evaluations
@@ -88,7 +85,7 @@ def score_model(training_data: Tuple[np.ndarray,np.ndarray], scoring_data: tuple
 
     scores = np.repeat(np.nan, n_eval)
     for i in range(n_eval):  # Possibly later in parallel
-        score, histories = multi_fit_single_eval(constructor, X_trainval = X_trainval, y_trainval = y_trainval, generator = g, fit_kwargs = DEFAULT_FIT, return_predictions = False, scale_cv_mode = crossval_scaling) # Scores with RPS
+        score, histories = multi_fit_single_eval(constructor, X_trainval = (feature_trainval, extra_inp_trainval), y_trainval = y_trainval, generator = g, fit_kwargs = DEFAULT_FIT, return_predictions = False, scale_cv_mode = crossval_scaling) # Scores with RPS
         g.reset()
         scores[i] = score
     return scores.mean()
@@ -101,7 +98,7 @@ n_eval = 3 # Shuffling and random weight initialization lead to randomness, poss
 depth = 20
 
 newframe, oldlevels, olddtypes = collapse_restore_multiindex(prepared_data.crossval.X_test, axis = 1, inplace = False) # extracting names
-result = sequential_forward_selection(training_data = (feature_input[:,:],obsinp_trainval), scoring_data = (feature_input[:,:],obsinp_trainval), scoring_fn = score_model, scoring_strategy = 'min', nimportant_vars = depth, variable_names=newframe.columns[:], njobs = 1)
+#result = sequential_forward_selection(training_data = (feature_input[:,:],obsinp_trainval), scoring_data = (feature_input[:,:],obsinp_trainval), scoring_fn = score_model, scoring_strategy = 'min', nimportant_vars = depth, variable_names=newframe.columns[:], njobs = 1)
 
 singlepass = result.retrieve_singlepass()
 multipass = result.retrieve_multipass()

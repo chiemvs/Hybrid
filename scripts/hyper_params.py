@@ -9,50 +9,45 @@ import tensorflow as tf
 from pathlib import Path
 
 sys.path.append(os.path.expanduser('~/Documents/Hybrid/'))
-from Hybrid.neuralnet import construct_modeldev_model, construct_climdev_model, earlystop, ConstructorAndCompiler
-from Hybrid.dataprep import test_trainval_split, multiclass_logistic_regression_coefficients, scale_other_features, multiclass_log_forecastprob
+from Hybrid.neuralnet import DEFAULT_COMPILE, ConstructorAndCompiler, construct_modeldev_model, construct_climdev_model, earlystop
+from Hybrid.dataprep import default_prep 
 from Hybrid.optimization import multi_fit_single_eval
 
 """
 Reading in pre-selected predictor sets (either sequential or jmeasure).
 and preconstructed targets
 """
-#targetname = 'tg-ex-q0.75-21D_ge5D_sep12-15'
+crossval_scaling = True # Wether to do also minmax scaling in cv mode
+do_climdev = True # Whether to do climdev or modeldev
+use_jmeasure = True
+npreds = 4
+
+#basedir = Path('/scistor/ivm/jsn295/backup/')
+basedir = Path(f'/nobackup/users/straaten/')
+basedir = basedir / f'{"clim" if do_climdev else ""}predsets/'
+#ndaythreshold = 9
+#savename = f'tg-ex-q0.75-21D_ge{ndaythreshold}D_sep12-15'
 quantile = 0.5
 timeagg = 31
-targetname = f'tg-anom_JJA_45r1_{timeagg}D-roll-mean_q{quantile}_sep12-15'
-selection = 'multi_d20_b3'
-#selection = 'jmeasure-dyn'
-basedir = Path('/nobackup/users/straaten')
-savedir = basedir / f'hyperparams/{targetname}_{selection}'
+predictandname = f'tg-anom_JJA_45r1_{timeagg}D-roll-mean_q{quantile}_sep12-15'
+
+# With npreds = None all predictors are read, model needs to be reconfigured dynamically so no need to accept the default constructor
+prepared_data, _ = default_prep(predictandname = predictandname, npreds = npreds, basedir = basedir, prepare_climdev = do_climdev, use_jmeasure = use_jmeasure)
+
+generator = prepared_data.crossval.generator
+# This prepared data has scaled trainval features, which we cannot scale again in cv mode, therefore replace with unscaled if neccesary
+# NOTE: cv mode scaling/fitting does not happen for the climdev inputs (scaled time and climprobkwargs).
+if crossval_scaling:
+    feature_input = prepared_data.crossval.X_trainval.values
+else:
+    feature_input = prepared_data.neural.trainval_inputs[0] # These are prescaled. In same list as secondary input logforc (or time)
+extra_inp_trainval = prepared_data.neural.trainval_inputs[-1] # Best guess information stream, either log of forecast or time for the logistic regression
+savedir = basedir / f'hyperparams/{prepared_data.raw.predictor_name[:-14]}'
 if savedir.exists():
     raise ValueError(f'hyperparam directory {savedir} already exists. Overwriting prevented. Check its content.')
 else:
+    pass
     savedir.mkdir()
-predictordir = basedir / 'predsets/objective_balanced_cv/' # Objectively sequential selected predictors
-#predictordir = basedir / 'predsets/jmeasure/' # Objectively jmeasure selected predictors
-for_obs_dir = basedir / 'predsets/full/' # contains corresponding forcasts and observations
-
-predictors = pd.read_hdf(predictordir / f'{targetname}_{selection}_predictors.h5', key = 'input').iloc[:,:4]
-forc = pd.read_hdf(for_obs_dir / f'{targetname}_forc.h5', key = 'input')
-obs = pd.read_hdf(for_obs_dir / f'{targetname}_obs.h5', key = 'target')
-
-crossval = True
-balanced = True # Whether to use the balanced (hot dry years) version of crossvaldation. Folds are non-consecutive but still split by year. keyword ignored if crossval == False
-crossval_scaling = True # Wether to do also minmax scaling in cv mode
-nfolds = 3
-
-X_test, X_trainval, generator = test_trainval_split(predictors, crossval = crossval, nfolds = nfolds, balanced = balanced)
-forc_test, forc_trainval, generator = test_trainval_split(forc, crossval = crossval, nfolds = nfolds, balanced = balanced)
-obs_test, obs_trainval, generator = test_trainval_split(obs, crossval = crossval, nfolds = nfolds, balanced = balanced)
-
-climprobkwargs, time_input, time_scaler = multiclass_logistic_regression_coefficients(obs_trainval) # If multiclass will return the coeficients for all 
-if crossval_scaling:
-    feature_input = X_trainval.values
-else:
-    feature_input, feature_scaler = scale_other_features(X_trainval)
-obs_input = obs_trainval.copy().values
-raw_predictions = multiclass_log_forecastprob(forc_trainval)
 
 """
 Hyperparam optimization
@@ -74,25 +69,28 @@ study = sherpa.Study(parameters=parameters,
 
 
 for trial in study:
-    construct_kwargs = dict(n_classes = obs_trainval.shape[-1], 
+    construct_kwargs = dict(n_classes = prepared_data.raw.obs.shape[-1], 
             n_hidden_layers= trial.parameters['n_hidden_layers'], 
-            n_features = X_trainval.shape[-1],
+            n_features = feature_input.shape[-1],
             n_hiddenlayer_nodes = trial.parameters['n_hiddenlayer_nodes'])
     
-    compile_kwargs = dict(optimizer=tf.keras.optimizers.Adam(learning_rate=trial.parameters['lr']))
-
-    constructor = ConstructorAndCompiler(construct_modeldev_model, construct_kwargs, compile_kwargs)
-
+    if do_climdev:
+        construct_kwargs.update({'climprobkwargs':prepared_data.climate.climprobkwargs})
+        construct_func = construct_climdev_model 
+    else:
+        construct_func = construct_modeldev_model
+    constructor = ConstructorAndCompiler(construct_func, construct_kwargs, DEFAULT_COMPILE)
+    
     fit_kwargs = dict(batch_size = trial.parameters['batch_size'], 
             epochs = 200, 
             shuffle = True,
-            callbacks = [earlystop(trial.parameters['earlystop_patience'])])
+            callbacks = [earlystop(patience = trial.parameters['earlystop_patience'], monitor = 'val_loss')])
 
     # Noisy fitting, so do multiple evalutations, whose mean will converge with more evaluations
     n_eval = 8
     scores = np.repeat(np.nan, n_eval)
     for i in range(n_eval):  # Possibly later in parallel
-        score, histories = multi_fit_single_eval(constructor, X_trainval = (feature_input, raw_predictions), y_trainval = obs_input, generator = generator, fit_kwargs = fit_kwargs, return_predictions = False, scale_cv_mode = crossval_scaling)
+        score, histories = multi_fit_single_eval(constructor, X_trainval = (feature_input, extra_inp_trainval), y_trainval = prepared_data.neural.trainval_output, generator = generator, fit_kwargs = fit_kwargs, return_predictions = False, scale_cv_mode = crossval_scaling)
         generator.reset()
         epochs = [len(h.epoch) for h in histories]
         scores[i] = score

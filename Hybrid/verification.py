@@ -76,7 +76,7 @@ def _compute_score(df, scorename: str, scorefunc: Callable, args: tuple = tuple(
     takes only those are not yet computed (no {column}_{scorename} present)
     scorefunc should accept (y_true, y_pred)
     """
-    for key in ['pi','ppjm','ppsf','climatology','trend']:
+    for key in ['pi','ppmdjm','ppmdsf','ppcdjm','ppcdsf','climatology','trend']:
         newkey = f'{key}_{scorename}'
         if (key in df.columns) and (not (newkey in df.columns)):
             score = scorefunc(df['observation'].values.squeeze(), df[key].values.squeeze(), *args, **kwargs)
@@ -187,23 +187,22 @@ def load_compute_rank(bookfile: str, return_bias: bool = False):
         frame.loc[:,'bias'] = frame['forecast'].mean(axis = 1) - frame['observation'] #bias between ensmean - obs 
         return frame[['placement','bias']], bin_edges
 
-def build_fit_nn_model(predictandname, add_trend: bool = True, npreds: int = None, use_jmeasure: bool = False, return_separate_test: bool = True):
+def build_fit_nn_model(predictandname, add_trend: bool = True, npreds: int = None, do_climdev: bool = False, use_jmeasure: bool = False, return_separate_test: bool = True):
     """
     Uses the default data preparation (from dataprep), then fits a default model
     """ 
     focus_class = -1
-    prepared_data, constructor = default_prep(predictandname = predictandname, npreds = npreds, use_jmeasure = use_jmeasure, focus_class = focus_class)
-    if use_jmeasure:
-        signature = 'jm'
-    else:
-        signature = 'sf'
+    basedir = Path(f'/nobackup/users/straaten/{"clim" if do_climdev else ""}predsets/')
+    prepared_data, constructor = default_prep(predictandname = predictandname, npreds = npreds, basedir = basedir, prepare_climdev = do_climdev, use_jmeasure = use_jmeasure, focus_class = focus_class)
+
+    signature = f'{"cd" if do_climdev else "md"}{"jm" if use_jmeasure else "sf"}'
     # Some climatological information, could for tganom predictands also be derived from the name.
     # But not for tg-ex
     climprob = prepared_data.raw.obs.mean(axis = 0).iloc[-1]
 
     # Training the model
     model = constructor.fresh_model()
-    model.fit(x = prepared_data.neural.trainval_inputs, y=prepared_data.neural.trainval_output, validation_split = 0.33, **DEFAULT_FIT)
+    model.fit(x = prepared_data.neural.trainval_inputs, y=prepared_data.neural.trainval_output, validation_split = 0.33, **DEFAULT_FIT, verbose = 0)
     
     # Generating model predictions:
     preds_test = model.predict(x = prepared_data.neural.test_inputs)

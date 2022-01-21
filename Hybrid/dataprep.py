@@ -15,7 +15,7 @@ from sklearn.preprocessing import MinMaxScaler
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import StratifiedKFold
 
-from .neuralnet import construct_modeldev_model, BrierScore, ConstructorAndCompiler, DEFAULT_CONSTRUCT, DEFAULT_COMPILE
+from .neuralnet import construct_modeldev_model, construct_climdev_model, BrierScore, ConstructorAndCompiler, DEFAULT_CONSTRUCT, DEFAULT_COMPILE
 
 THREEFOLD_DIVISION = pd.Series([ 0,1,2,1,1,2,2,0,1,0,0,1,1,2,0,99,2,99,99,2,0,99], index = pd.RangeIndex(1998,2020, name = 'year')) # Generated with generate_balanced_kfold with forecasts > 7 hot days in 21 day period, leadtime = 19-21. 99 is the test class.. [0,1,2,0,1,2,0,2,1,0,1,2,0,1,2,99,99,99,2,1,0,99] was based on the old Excel balancing
 
@@ -374,7 +374,7 @@ class PreparedData(object):
         for key in kwargs.keys():
             setattr(getattr(self, name), key, kwargs[key])
 
-def default_prep(predictandname, npreds: int = None, use_jmeasure: bool = False, focus_class: int = -1, basedir: Path = Path('/nobackup/users/straaten/predsets/')) -> Tuple[PreparedData,ConstructorAndCompiler]:
+def default_prep(predictandname, npreds: int = None, use_jmeasure: bool = False, focus_class: int = -1, basedir: Path = Path('/nobackup/users/straaten/predsets/'), prepare_climdev: bool = False) -> Tuple[PreparedData,ConstructorAndCompiler]:
     """
     Can only be used with a certain predictand when files have already been prepared
     It assumes a written (objectively selected for this specific predictand) predictor set 
@@ -383,6 +383,8 @@ def default_prep(predictandname, npreds: int = None, use_jmeasure: bool = False,
     and to setup the architecture corresponding to the input size (and nclasses of the predictand)
     which is returned in the form of a constructor
     """
+    if prepare_climdev:
+        assert 'climpredsets' in str(basedir), 'When preparing for climate deviations, supply the base directory with its specific climpredsets'
     for_obs_dir = basedir / 'full/'
     if npreds is None:
         print('reading full set, no objective selection')
@@ -417,18 +419,28 @@ def default_prep(predictandname, npreds: int = None, use_jmeasure: bool = False,
     logforc_test = multiclass_log_forecastprob(forc_test)
     obsinp_test = obs_test.values
 
-    DEFAULT_CONSTRUCT.update(n_classes = obs_trainval.shape[-1], n_features = features_trainval.shape[-1])
+    construct_kwargs = DEFAULT_CONSTRUCT.copy() 
+    construct_kwargs.update(n_classes = obs_trainval.shape[-1], n_features = features_trainval.shape[-1])
+    if prepare_climdev:
+        construct_func = construct_climdev_model
+        construct_kwargs.update({'climprobkwargs':climprobkwargs})
+    else:
+        construct_func = construct_modeldev_model
+
     DEFAULT_COMPILE['metrics'] = ['accuracy',BrierScore(class_index = focus_class)]
 
-    constructor = ConstructorAndCompiler(construct_modeldev_model, DEFAULT_CONSTRUCT, DEFAULT_COMPILE)
+    constructor = ConstructorAndCompiler(construct_func, construct_kwargs, DEFAULT_COMPILE)
 
     data = PreparedData()
-    data.add_data(name = 'raw', predictors = predictors, obs = obs, forc = forc)
+    data.add_data(name = 'raw', predictors = predictors, obs = obs, forc = forc, predictor_name = predictor_name)
     data.add_data(name = 'crossval', X_trainval = X_trainval, X_test = X_test, 
             forc_trainval = forc_trainval, forc_test = forc_test, 
             obs_trainval = obs_trainval, obs_test = obs_test, 
             generator = generator)
-    data.add_data(name = 'neural', trainval_inputs = [features_trainval, logforc_trainval], trainval_output = obsinp_trainval, test_inputs = [features_test, logforc_test], test_output = obsinp_test)
+    if prepare_climdev: # Giving time as the secondary input
+        data.add_data(name = 'neural', trainval_inputs = [features_trainval, time_trainval], trainval_output = obsinp_trainval, test_inputs = [features_test, time_test], test_output = obsinp_test)
+    else: # Giving logforc of raw as the secondaty input
+        data.add_data(name = 'neural', trainval_inputs = [features_trainval, logforc_trainval], trainval_output = obsinp_trainval, test_inputs = [features_test, logforc_test], test_output = obsinp_test)
     data.add_data(name = 'climate', time_trainval = time_trainval, time_test = time_test, climprobkwargs = climprobkwargs)
 
     return data, constructor

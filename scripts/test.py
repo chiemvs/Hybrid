@@ -17,7 +17,7 @@ from Hybrid.dataprep import default_prep
 #tgexname = 'books_paper3-2_tg-ex-q0.75-21D_JJA_45r1_1D_15-t2m-q095-adapted-mean.csv'
 #df2 = load_tgex_and_compute(bookfile = tgexname, nday_threshold = 5, add_trend = True, return_trend = False)
 
-total, test_only = build_fit_nn_model(predictandname = 'tg-anom_JJA_45r1_31D-roll-mean_q0.5_sep12-15', npreds = 4) # Sequential forward
+total, test_only, prepared_data = build_fit_nn_model(predictandname = 'tg-anom_JJA_45r1_21D-roll-mean_q0.66_sep12-15', npreds = 4, do_climdev = False) # Sequential forward
 #one, two = default_prep(predictandname = 'tg-anom_JJA_45r1_31D-roll-mean_q0.5_sep12-15', npreds = 4) # Sequential forward
 #total2, test_only2 = build_fit_nn_model(predictandname = 'tg-anom_JJA_45r1_31D-roll-mean_q0.5_sep12-15', use_jmeasure = True, npreds = 6) # j_measure
 #
