@@ -19,20 +19,20 @@ and preconstructed targets
 """
 crossval_scaling = True # Wether to do also minmax scaling in cv mode
 do_climdev = True # Whether to do climdev or modeldev
-use_jmeasure = True
+use_jmeasure = False
 npreds = 4
 
-#basedir = Path('/scistor/ivm/jsn295/backup/')
-basedir = Path(f'/nobackup/users/straaten/')
-basedir = basedir / f'{"clim" if do_climdev else ""}predsets/'
-#ndaythreshold = 9
-#savename = f'tg-ex-q0.75-21D_ge{ndaythreshold}D_sep12-15'
-quantile = 0.5
-timeagg = 31
-predictandname = f'tg-anom_JJA_45r1_{timeagg}D-roll-mean_q{quantile}_sep12-15'
+basedir = Path('/scistor/ivm/jsn295/backup/')
+#basedir = Path(f'/nobackup/users/straaten/')
+predictordir = basedir / f'{"clim" if do_climdev else ""}predsets/'
+ndaythreshold = int(sys.argv[1])
+predictandname = f'tg-ex-q0.75-21D_ge{ndaythreshold}D_sep12-15'
+#timeagg = int(sys.argv[1])
+#quantile = float(sys.argv[2])
+#predictandname = f'tg-anom_JJA_45r1_{timeagg}D-roll-mean_q{quantile}_sep12-15'
 
 # With npreds = None all predictors are read, model needs to be reconfigured dynamically so no need to accept the default constructor
-prepared_data, _ = default_prep(predictandname = predictandname, npreds = npreds, basedir = basedir, prepare_climdev = do_climdev, use_jmeasure = use_jmeasure)
+prepared_data, _ = default_prep(predictandname = predictandname, npreds = npreds, basedir = predictordir, prepare_climdev = do_climdev, use_jmeasure = use_jmeasure)
 
 generator = prepared_data.crossval.generator
 # This prepared data has scaled trainval features, which we cannot scale again in cv mode, therefore replace with unscaled if neccesary
@@ -42,11 +42,10 @@ if crossval_scaling:
 else:
     feature_input = prepared_data.neural.trainval_inputs[0] # These are prescaled. In same list as secondary input logforc (or time)
 extra_inp_trainval = prepared_data.neural.trainval_inputs[-1] # Best guess information stream, either log of forecast or time for the logistic regression
-savedir = basedir / f'hyperparams/{prepared_data.raw.predictor_name[:-14]}'
+savedir = basedir / f'{"clim" if do_climdev else ""}hyperparams/{prepared_data.raw.predictor_name[:-14]}'
 if savedir.exists():
     raise ValueError(f'hyperparam directory {savedir} already exists. Overwriting prevented. Check its content.')
 else:
-    pass
     savedir.mkdir()
 
 """
@@ -84,6 +83,7 @@ for trial in study:
     fit_kwargs = dict(batch_size = trial.parameters['batch_size'], 
             epochs = 200, 
             shuffle = True,
+            verbose = 0,
             callbacks = [earlystop(patience = trial.parameters['earlystop_patience'], monitor = 'val_loss')])
 
     # Noisy fitting, so do multiple evalutations, whose mean will converge with more evaluations

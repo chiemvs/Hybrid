@@ -6,4 +6,4 @@ VENVDIR=$1
 SCRIPT=$2
 
 source $VENVDIR/bin/activate
-python3 $SCRIPT
+python3 $SCRIPT "${@:3}" # Possibility for extra arguments
