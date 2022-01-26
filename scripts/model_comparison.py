@@ -31,7 +31,7 @@ nfolds = 3
 targetname = 'books_paper3-2_tg-ex-q0.75-21D_JJA_45r1_1D_15-t2m-q095-adapted-mean.csv'
 predictors, forc, obs = prepare_full_set(targetname, ndaythreshold = ndaythreshold, predictand_cluster = target_region, leadtimepool = leadtimepool)
 # In case of predictand substitution
-quantile = 0.66
+quantile = 0.5
 timeagg = 21
 if preload: # For instance a predictor set coming from 
     #loadpath = f'/nobackup/users/straaten/predsets/objective_balanced_cv/tg-ex-q0.75-21D_ge{ndaythreshold}D_sep12-15_multi_d20_b3_predictors.h5'
@@ -49,8 +49,16 @@ tganom_name = f'books_paper3-1_tg-anom_JJA_45r1_{timeagg}D-roll-mean_15-t2m-q095
 climname = f'tg-anom_clim_1998-06-07_2019-10-31_{timeagg}D-roll-mean_15-t2m-q095-adapted-mean_15_15_q{quantile}'
 modelclimname = f'tg-anom_45r1_1998-06-07_2019-08-31_{timeagg}D-roll-mean_15-t2m-q095-adapted-mean_15_15_q{quantile}'
 
+
 tgobs, tgforc = read_tganom_predictand(booksname = tganom_name, clustid = target_region, separation = leadtimepool, climname = climname, modelclimname = modelclimname) 
 forc, obs = tgforc.loc[forc.index,:], tgobs.loc[forc.index,:]
+
+#from Hybrid.dataprep import THREEFOLD_DIVISION
+#
+#ex, _ = generate_balanced_kfold(forc.iloc[:,-1], shuffle = True)
+#tg, _ = generate_balanced_kfold(forc2.iloc[:,-1], shuffle = True)
+#comb = pd.concat([ex,tg,np.equal(ex,tg)],axis = 1, keys = [f'ex{ndaythreshold}',f'tg{timeagg}>{quantile}','equal'])
+#print(comb)
 
 """
 Merging forc to predictors for climdev

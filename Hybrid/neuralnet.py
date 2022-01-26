@@ -74,7 +74,8 @@ class ClimLogProbLayer(tf.keras.layers.Layer):
                 initializer = init_a,
                 trainable = False)
         self.b = self.add_weight(name = "b",
-                shape=[self.n_out,],                                                                                     initializer = init_b,
+                shape=[self.n_out,],
+                initializer = init_b,
                 trainable = False)
 
     def call(self, inputs):
