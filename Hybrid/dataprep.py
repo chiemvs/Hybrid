@@ -11,7 +11,7 @@ except ImportError:
 from copy import deepcopy
 from pathlib import Path
 from typing import Union, Callable, Tuple, List
-from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import StratifiedKFold
 
@@ -282,6 +282,7 @@ def scale_other_features(df: Union[pd.DataFrame,np.ndarray], fitted_scaler: MinM
     """
     if fitted_scaler is None:
         print('fitting a new feature scaler')
+        #fitted_scaler = StandardScaler() 
         fitted_scaler = MinMaxScaler() 
         scaled_input = fitted_scaler.fit_transform(df)
     else:

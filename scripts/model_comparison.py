@@ -21,7 +21,7 @@ target_region = 9
 ndaythreshold = 7 #[3,7] #7 #[4,9] Switch to list for multiclass (n>2) predictions
 focus_class = -1 # Index of the class to be scored and benchmarked through bss
 multi_eval = True # Single aggregated score or one per fold
-preload = True
+preload = False
 crossval = True
 balanced = True # Whether to use the balanced (hot dry years) version of crossvaldation. Folds are non-consecutive but still split by year. keyword ignored if crossval == False
 crossval_scaling = True # Wether to do also minmax scaling in cv mode
@@ -31,14 +31,12 @@ nfolds = 3
 targetname = 'books_paper3-2_tg-ex-q0.75-21D_JJA_45r1_1D_15-t2m-q095-adapted-mean.csv'
 predictors, forc, obs = prepare_full_set(targetname, ndaythreshold = ndaythreshold, predictand_cluster = target_region, leadtimepool = leadtimepool)
 # In case of predictand substitution
-quantile = 0.5
+quantile = 0.66
 timeagg = 21
 if preload: # For instance a predictor set coming from 
-    #loadpath = f'/nobackup/users/straaten/predsets/objective_balanced_cv/tg-ex-q0.75-21D_ge{ndaythreshold}D_sep12-15_multi_d20_b3_predictors.h5'
-    #loadpath = f'/nobackup/users/straaten/predsets/objective_balanced_cv/swvlshortscale/tg-ex-q0.75-21D_ge{ndaythreshold}D_sep12-15_multi_d20_b3_predictors.h5'
-    loadpath = f'/nobackup/users/straaten/predsets/objective_balanced_cv/tg-anom_JJA_45r1_{timeagg}D-roll-mean_q{quantile}_sep12-15_multi_d20_b3_predictors.h5'
-    #loadpath = f'/nobackup/users/straaten/predsets/objective_balanced_cv/swvlshortscale/tg-anom_JJA_45r1_{timeagg}D-roll-mean_q{quantile}_sep12-15_multi_d20_b3_predictors.h5'
-    predictors = pd.read_hdf(loadpath, key = 'input').iloc[:,:4]
+    #loadpath = f'/nobackup/users/straaten/predsets/objective_balanced_cv/dynremote/tg-ex-q0.75-21D_ge{ndaythreshold}D_sep12-15_multi_d20_b3_predictors.h5'
+    loadpath = f'/nobackup/users/straaten/predsets/objective_balanced_cv/dynremote/tg-anom_JJA_45r1_{timeagg}D-roll-mean_q{quantile}_sep12-15_multi_d20_b3_predictors.h5'
+    predictors = pd.read_hdf(loadpath, key = 'input').iloc[:,:2]
 
 
 """
@@ -156,13 +154,13 @@ constructor2 = ConstructorAndCompiler(construct_climdev_model, construct_kwargs,
 
 fit_kwargs = dict(batch_size = 32, epochs = 200, shuffle = True, callbacks = [earlystop(patience = 7, monitor = 'val_loss')])
 
-#if multi_eval:
-#    results2 = multi_fit_multi_eval(constructor2, X_trainval = (feature_input, time_input), y_trainval = obs_input, generator = generator, fit_kwargs = fit_kwargs, scale_cv_mode = crossval_scaling)
-#    results2.columns = ['crossentropy','accuracy','brier'] # coould potentially also be inside the multi_eval, but difficult to get names from the mixture of strings and other
-#else:
-#    score2, predictions = multi_fit_single_eval(constructor2, X_trainval = (feature_input, time_input), y_trainval = obs_input, generator = generator, fit_kwargs = fit_kwargs, return_predictions = True, scale_cv_mode = crossval_scaling)
-#
-#generator.reset()
+if multi_eval:
+    results2 = multi_fit_multi_eval(constructor2, X_trainval = (feature_input, time_input), y_trainval = obs_input, generator = generator, fit_kwargs = fit_kwargs, scale_cv_mode = crossval_scaling)
+    results2.columns = ['crossentropy','accuracy','brier'] # coould potentially also be inside the multi_eval, but difficult to get names from the mixture of strings and other
+else:
+    score2, predictions = multi_fit_single_eval(constructor2, X_trainval = (feature_input, time_input), y_trainval = obs_input, generator = generator, fit_kwargs = fit_kwargs, return_predictions = True, scale_cv_mode = crossval_scaling)
+
+generator.reset()
 
 """
 Test the modeldev keras
@@ -181,13 +179,13 @@ constructor = ConstructorAndCompiler(construct_modeldev_model, construct_kwargs,
 
 fit_kwargs = dict(batch_size = 32, epochs = 200, shuffle = True, callbacks = [earlystop(patience = 7, monitor = 'val_loss')])
 
-#if multi_eval:
-#    results = multi_fit_multi_eval(constructor, X_trainval = (feature_input, raw_predictions), y_trainval = obs_input, generator = generator, fit_kwargs = fit_kwargs, scale_cv_mode = crossval_scaling)
-#    results.columns = ['crossentropy','accuracy','brier'] # coould potentially also be inside the multi_eval, but difficult to get names from the mixture of strings and other
-#else:
-#    score, predictions = multi_fit_single_eval(constructor, X_trainval = (feature_input, raw_predictions), y_trainval = obs_input, generator = generator, fit_kwargs = fit_kwargs, return_predictions = True, scale_cv_mode = crossval_scaling)
-#
-#generator.reset()
+if multi_eval:
+    results = multi_fit_multi_eval(constructor, X_trainval = (feature_input, raw_predictions), y_trainval = obs_input, generator = generator, fit_kwargs = fit_kwargs, scale_cv_mode = crossval_scaling)
+    results.columns = ['crossentropy','accuracy','brier'] # coould potentially also be inside the multi_eval, but difficult to get names from the mixture of strings and other
+else:
+    score, predictions = multi_fit_single_eval(constructor, X_trainval = (feature_input, raw_predictions), y_trainval = obs_input, generator = generator, fit_kwargs = fit_kwargs, return_predictions = True, scale_cv_mode = crossval_scaling)
+
+generator.reset()
 
 """
 Test RF Hybrid model only empirical info and dynamical info of the intermediate variables
@@ -220,29 +218,29 @@ Benchmarks
 (Logistic) regression was fitted on all train/validation data, and to the single focus class
 Revised predict method is called here
 """
-#if multi_eval:
-#    if hasattr(generator,'groupids'):
-#        benchmarks = pd.DataFrame(np.nan, index = pd.MultiIndex.from_product([generator.groupids, ['val'], ['raw','trend']], names = ['fold','part','reference']), columns = ['brier'])
-#    else:
-#        benchmarks = pd.DataFrame(np.nan, index = pd.MultiIndex.from_product([[0], ['val'], ['raw','trend']], names = ['fold','part','reference']), columns = ['brier'])
-#    for i, (trainind, valind) in enumerate(generator): # Entering the crossvalidation
-#        benchmarks.loc[(i,'val','raw'),:] = np.mean((obs_trainval_bool.iloc[valind] - forc_trainval.iloc[valind,focus_class])**2)
-#        benchmarks.loc[(i,'val','trend'),:] = np.mean((obs_trainval_bool.iloc[valind] - lr.predict(time_input)[valind])**2)
-#    
-#    bs_joined = pd.merge(results.loc[(slice(None),'val'),'brier'],benchmarks, left_index = True, right_index = True, suffixes = ['_pp','_ref'])
-#    bss = (1 - bs_joined['brier_pp']/bs_joined['brier_ref']).unstack('reference')
-#
-#    #bss = 1 - results.loc[(slice(None),'val'),'brier'] / benchmarks.loc[(slice(None),'val','trend'),'brier']
-#    print(bss.round(3))
-#else: # RPSS benchmarks
-#    benchmarkraw = ranked_prob_score(forc_trainval.values, obs_trainval.values)
-#    benchmarktrend = ranked_prob_score(lr.predict_proba(time_input), obs_trainval.values)
-#    #print(f'RPS_raw    RPS_trend: ')
-#    #print(f'{np.round(benchmarkraw, 3)}       {np.round(benchmarktrend, 3)}')
-#    print(f'RPSS_raw    RPSS_trend: ')
-#    print(f'{np.round(1 - score / benchmarkraw, 3)}       {np.round(1 - score / benchmarktrend, 3)}')
-#
-#generator.reset()
+if multi_eval:
+    if hasattr(generator,'groupids'):
+        benchmarks = pd.DataFrame(np.nan, index = pd.MultiIndex.from_product([generator.groupids, ['val'], ['raw','trend']], names = ['fold','part','reference']), columns = ['brier'])
+    else:
+        benchmarks = pd.DataFrame(np.nan, index = pd.MultiIndex.from_product([[0], ['val'], ['raw','trend']], names = ['fold','part','reference']), columns = ['brier'])
+    for i, (trainind, valind) in enumerate(generator): # Entering the crossvalidation
+        benchmarks.loc[(i,'val','raw'),:] = np.mean((obs_trainval_bool.iloc[valind] - forc_trainval.iloc[valind,focus_class])**2)
+        benchmarks.loc[(i,'val','trend'),:] = np.mean((obs_trainval_bool.iloc[valind] - lr.predict(time_input)[valind])**2)
+    
+    bs_joined = pd.merge(results.loc[(slice(None),'val'),'brier'],benchmarks, left_index = True, right_index = True, suffixes = ['_pp','_ref'])
+    bss = (1 - bs_joined['brier_pp']/bs_joined['brier_ref']).unstack('reference')
+
+    #bss = 1 - results.loc[(slice(None),'val'),'brier'] / benchmarks.loc[(slice(None),'val','trend'),'brier']
+    print(bss.round(3))
+else: # RPSS benchmarks
+    benchmarkraw = ranked_prob_score(forc_trainval.values, obs_trainval.values)
+    benchmarktrend = ranked_prob_score(lr.predict_proba(time_input), obs_trainval.values)
+    #print(f'RPS_raw    RPS_trend: ')
+    #print(f'{np.round(benchmarkraw, 3)}       {np.round(benchmarktrend, 3)}')
+    print(f'RPSS_raw    RPSS_trend: ')
+    print(f'{np.round(1 - score / benchmarkraw, 3)}       {np.round(1 - score / benchmarktrend, 3)}')
+
+generator.reset()
 
 """
 Statistics in the cv 

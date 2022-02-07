@@ -160,14 +160,14 @@ def prepare_full_set(predictand_name, ndaythreshold: Union[List[int],int], predi
     Multiple ndaythresholds leads to multiclass predictions
     """
     simple_dynamical_set = pd.DataFrame({'booksname':[
-        'books_paper3-3-simple_swvl4-anom_JJA_45r1_21D-roll-mean_1-swvl-simple-mean.csv',
-        'books_paper3-3-simple_swvl4-anom_JJA_45r1_31D-roll-mean_1-swvl-simple-mean.csv',
-        'books_paper3-3-simple_swvl13-anom_JJA_45r1_21D-roll-mean_1-swvl-simple-mean.csv',
-        'books_paper3-3-simple_swvl13-anom_JJA_45r1_31D-roll-mean_1-swvl-simple-mean.csv',
-        'books_paper3-3-simple_z-anom_JJA_45r1_21D-roll-mean_1-swvl-simple-mean.csv',
-        'books_paper3-3-simple_z-anom_JJA_45r1_31D-roll-mean_1-swvl-simple-mean.csv',
-        'books_paper3-3-simple_sst-anom_JJA_45r1_21D-roll-mean_1-sst-simple-mean.csv',
-        'books_paper3-3-simple_sst-anom_JJA_45r1_31D-roll-mean_1-sst-simple-mean.csv',
+        'books_paper3-3-simple_swvl4-anom_JJA_45r1_21D-roll-mean_1-swvl-local-mean.csv',
+        'books_paper3-3-simple_swvl4-anom_JJA_45r1_31D-roll-mean_1-swvl-local-mean.csv',
+        'books_paper3-3-simple_swvl13-anom_JJA_45r1_21D-roll-mean_1-swvl-local-mean.csv',
+        'books_paper3-3-simple_swvl13-anom_JJA_45r1_31D-roll-mean_1-swvl-local-mean.csv',
+        'books_paper3-3-simple_z-anom_JJA_45r1_21D-roll-mean_1-swvl-local-mean.csv',
+        'books_paper3-3-simple_z-anom_JJA_45r1_31D-roll-mean_1-swvl-local-mean.csv',
+        'books_paper3-3-simple_sst-anom_JJA_45r1_21D-roll-mean_1-sst-local-mean.csv',
+        'books_paper3-3-simple_sst-anom_JJA_45r1_31D-roll-mean_1-sst-local-mean.csv',
         'books_paper3-4-4regimes_z-anom_JJA_45r1_21D-frequency_ids.csv',
         ],
         'readfunc':[
