@@ -14,7 +14,7 @@ from sklearn.metrics import roc_auc_score
 from pathlib import Path
 from typing import Callable, Union, List
 
-from .dataprep import test_trainval_split, default_prep, scale_time, binarize_hotday_predictand, singleclass_regression # We do not use base-exceedence from Weave.models because the scaler is hidden
+from .dataprep import test_trainval_split, default_prep, scale_time, binarize_hotday_predictand, singleclass_regression, extra_division, THREEFOLD_DIVISION
 from .neuralnet import DEFAULT_FIT
 
 sys.path.append(os.path.expanduser('~/Documents/SubSeas'))
@@ -34,7 +34,7 @@ def load(booksname: str, compute = False):
     else:
         return al
 
-def add_trend_model(df: pd.DataFrame, groupers = ['leadtime','clustid'], exclude_test: bool = False, return_coefs = False):
+def add_trend_model(df: pd.DataFrame, groupers = ['leadtime','clustid'], exclude_test: bool = False, return_coefs = False, division: pd.Series = THREEFOLD_DIVISION):
     """
     Modifies the dataframe inplace, adding a trend column 
     This can involve multiple logistic regressions. namely one for a series with a unique time_index.
@@ -51,7 +51,7 @@ def add_trend_model(df: pd.DataFrame, groupers = ['leadtime','clustid'], exclude
     keys = []
     for key, subdf in groupeddf:
         if exclude_test:
-            subdf_test, subdf_trainval, _ = test_trainval_split(subdf.sort_index(), crossval = True, nfolds = 3, balanced = True)
+            subdf_test, subdf_trainval, _ = test_trainval_split(subdf.sort_index(), crossval = True, nfolds = 3, balanced = True, division = division)
             print(f'excluding test years {subdf_test.index.get_level_values("time").year.unique().values} from logistic trend fit') 
         else:
             subdf_trainval = subdf
@@ -187,13 +187,21 @@ def load_compute_rank(bookfile: str, return_bias: bool = False):
         frame.loc[:,'bias'] = frame['forecast'].mean(axis = 1) - frame['observation'] #bias between ensmean - obs 
         return frame[['placement','bias']], bin_edges
 
-def build_fit_nn_model(predictandname, add_trend: bool = True, npreds: int = None, do_climdev: bool = False, use_jmeasure: bool = False, return_separate_test: bool = True):
+def build_fit_nn_model(predictandname, add_trend: bool = True, npreds: int = None, do_climdev: bool = False, use_jmeasure: bool = False, extra_cv: bool = False, return_separate_test: bool = True):
     """
-    Uses the default data preparation (from dataprep), then fits a default model
+    High level function
+    Uses the default data preparation (from dataprep), then fits a default or climdev model
+    Several switches control which basedir is supplied for dataloading in default_prep
+    do_climdev loads predictors selected for climdev model
+    extra_cv loads predictors selected in a different threefold crossvalidation (to check robustness) 
     """ 
     focus_class = -1
-    basedir = Path(f'/nobackup/users/straaten/{"clim" if do_climdev else ""}predsets/')
-    prepared_data, constructor = default_prep(predictandname = predictandname, npreds = npreds, basedir = basedir, prepare_climdev = do_climdev, use_jmeasure = use_jmeasure, focus_class = focus_class)
+    basedir = Path(f'/nobackup/users/straaten/{"clim" if do_climdev else ""}predsets{"3f" if extra_cv else ""}/')
+    if extra_cv:
+        division = extra_division
+    else:
+        division = THREEFOLD_DIVISION
+    prepared_data, constructor = default_prep(predictandname = predictandname, npreds = npreds, basedir = basedir, prepare_climdev = do_climdev, use_jmeasure = use_jmeasure, focus_class = focus_class, division = division)
 
     signature = f'{"cd" if do_climdev else "md"}{"jm" if use_jmeasure else "sf"}'
     # Some climatological information, could for tganom predictands also be derived from the name.
@@ -218,7 +226,7 @@ def build_fit_nn_model(predictandname, add_trend: bool = True, npreds: int = Non
 
     # Training a trend benchmark model, and generating scale test time input
     if add_trend:
-        coefs = add_trend_model(df = total, groupers = ['separation','clustid'], exclude_test = True, return_coefs=False) # happens inplace
+        coefs = add_trend_model(df = total, groupers = ['separation','clustid'], exclude_test = True, return_coefs=False, division = division) # happens inplace
 
     total = compute_bs(total)
     

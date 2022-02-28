@@ -18,6 +18,7 @@ from sklearn.model_selection import StratifiedKFold
 from .neuralnet import construct_modeldev_model, construct_climdev_model, BrierScore, ConstructorAndCompiler, DEFAULT_CONSTRUCT, DEFAULT_COMPILE
 
 THREEFOLD_DIVISION = pd.Series([ 0,1,2,1,1,2,2,0,1,0,0,1,1,2,0,99,2,99,99,2,0,99], index = pd.RangeIndex(1998,2020, name = 'year')) # Generated with generate_balanced_kfold with forecasts > 7 hot days in 21 day period, leadtime = 19-21. 99 is the test class.. [0,1,2,0,1,2,0,2,1,0,1,2,0,1,2,99,99,99,2,1,0,99] was based on the old Excel balancing
+extra_division = pd.Series([ 0,0,2,1,2,1,1,2,0,0,1,2,0,2,1,99,99,2,0,1,99,99], index = pd.RangeIndex(1998,2020, name = 'year')) # Generated with generate_balanced_kfold with forecasts > 31day > q0.5,  12-15. 99 is the test class.
 
 def categorize_hotday_predictand(df: Union[pd.Series, pd.DataFrame], lower_split_bounds: List[int]) -> Tuple[pd.Series, pd.DataFrame]:
     """
@@ -126,14 +127,14 @@ class SingleGenerator(object):
             memo[id_self] = _copy
         return _copy
 
-def test_trainval_split(df: Union[pd.Series, pd.DataFrame], crossval: bool = False, nfolds: int = 3, balanced: bool = True) -> Tuple[Union[pd.Series, pd.DataFrame],Union[GroupedGenerator,SingleGenerator]]:
+def test_trainval_split(df: Union[pd.Series, pd.DataFrame], crossval: bool = False, nfolds: int = 3, balanced: bool = True, division: pd.Series = THREEFOLD_DIVISION) -> Tuple[Union[pd.Series, pd.DataFrame],Union[GroupedGenerator,SingleGenerator]]:
     """
     Hardcoded train/val test split, supplied dataset should be indexed by time
     Returns a single test set and a single combined train/validation set,
     plus a generator that can be called for the right indices for the latter 
     crossval = True with nfolds = 4 will lead to 4 times different indices, which are split by year  
     Option to do a predetermined (hardcoded) crossval that balances hot and cold years over the folds.
-    Only works with three folds
+    Only works with three folds. This division can be supplied as argument
     """
     assert df.index.names[0] == 'time', 'Dataframe or series should be indexed by time at zeroth level'
     extra_levels_indexer = (slice(None),) * (df.index.nlevels - 1) # levels in addition to time
@@ -153,7 +154,6 @@ def test_trainval_split(df: Union[pd.Series, pd.DataFrame], crossval: bool = Fal
         generator = SingleGenerator(trainvalset.index.get_loc_level(val_time,'time')[0]) # This passes the boolean array to the generator
     elif balanced:
         assert nfolds == 3, 'balanced crossvalidation only done for three folds'
-        division = THREEFOLD_DIVISION
         division = division.reindex(df.index.get_level_values('time').year).values
         testset = df.loc[division == 99] # Actually a slightly different test set, and array indexing as opposed to slicing
         trainvalset = df.loc[division != 99]
@@ -375,7 +375,7 @@ class PreparedData(object):
         for key in kwargs.keys():
             setattr(getattr(self, name), key, kwargs[key])
 
-def default_prep(predictandname, npreds: int = None, use_jmeasure: bool = False, focus_class: int = -1, basedir: Path = Path('/nobackup/users/straaten/predsets/'), prepare_climdev: bool = False) -> Tuple[PreparedData,ConstructorAndCompiler]:
+def default_prep(predictandname, npreds: int = None, use_jmeasure: bool = False, focus_class: int = -1, basedir: Path = Path('/nobackup/users/straaten/predsets/'), prepare_climdev: bool = False, division: pd.Series = THREEFOLD_DIVISION) -> Tuple[PreparedData,ConstructorAndCompiler]:
     """
     Can only be used with a certain predictand when files have already been prepared
     It assumes a written (objectively selected for this specific predictand) predictor set 
@@ -402,9 +402,9 @@ def default_prep(predictandname, npreds: int = None, use_jmeasure: bool = False,
     obs= pd.read_hdf(for_obs_dir / f'{predictandname}_obs.h5', key = 'target')
     
     # Splitting the sets.
-    X_test, X_trainval, generator = test_trainval_split(predictors, crossval = True, nfolds = 3, balanced = True)
-    forc_test, forc_trainval, generator = test_trainval_split(forc, crossval = True, nfolds = 3, balanced = True)
-    obs_test, obs_trainval, generator = test_trainval_split(obs, crossval = True, nfolds = 3, balanced = True)
+    X_test, X_trainval, generator = test_trainval_split(predictors, crossval = True, nfolds = 3, balanced = True, division = division)
+    forc_test, forc_trainval, generator = test_trainval_split(forc, crossval = True, nfolds = 3, balanced = True, division = division)
+    obs_test, obs_trainval, generator = test_trainval_split(obs, crossval = True, nfolds = 3, balanced = True, division = division)
 
     # Prepare trainval data for the neural network (conversions to np.ndarray)
     features_trainval, feature_scaler = scale_other_features(X_trainval)

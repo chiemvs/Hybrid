@@ -1,3 +1,7 @@
+"""
+Call signature: predictor_selection.py $CLIMDEV $NDAYTHRESHOLD
+or...: predictors_selection.py $CLIMDEV $TIMEAGG $QUANTILE
+"""
 import sys
 import os
 import numpy as np 
@@ -11,28 +15,34 @@ from PermutationImportance.sequential_selection import sequential_forward_select
 
 sys.path.append(os.path.expanduser('~/Documents/Hybrid/'))
 from Hybrid.neuralnet import DEFAULT_FIT, DEFAULT_COMPILE, ConstructorAndCompiler, construct_modeldev_model, construct_climdev_model
-from Hybrid.dataprep import default_prep
+from Hybrid.dataprep import default_prep, extra_division
 from Hybrid.optimization import multi_fit_single_eval, multi_fit_multi_eval
 
 sys.path.append(os.path.expanduser('~/Documents/Weave/'))
 from Weave.utils import collapse_restore_multiindex
 
 crossval_scaling = True # Wether to do also minmax scaling in cv mode
-do_climdev = False # Whether to do climdev or modeldev
+do_climdev = sys.argv[1].lower() == 'true' # TRUE/FALSE Whether to do climdev or modeldev
 
-#basedir = Path('/scistor/ivm/jsn295/backup/')
-basedir = Path(f'/nobackup/users/straaten/')
+if len(sys.argv[2:]) == 1: 
+    print('assuming single argument is ndaythreshold')
+    ndaythreshold = int(sys.argv[2])
+    savename = f'tg-ex-q0.75-21D_ge{ndaythreshold}D_sep12-15'
+else:
+    print('assuming double argument is timeagg, quantile')
+    timeagg = int(sys.argv[2])
+    quantile = float(sys.argv[3])
+    savename = f'tg-anom_JJA_45r1_{timeagg}D-roll-mean_q{quantile}_sep12-15'
+
+basedir = Path('/scistor/ivm/jsn295/backup/')
+#basedir = Path(f'/nobackup/users/straaten/')
 basedir = basedir / f'{"clim" if do_climdev else ""}predsets/'
+#basedir = basedir / f'{"clim" if do_climdev else ""}predsets3f/'
 savedir = basedir / 'objective_balanced_cv/'
-#ndaythreshold = 9
-#savename = f'tg-ex-q0.75-21D_ge{ndaythreshold}D_sep12-15'
-quantile = 0.5
-timeagg = 21
-savename = f'tg-anom_JJA_45r1_{timeagg}D-roll-mean_q{quantile}_sep12-15'
 
 
 # With npreds = None all predictors are read, model needs to be reconfigured dynamically so no need to accept the default constructor
-prepared_data, _ = default_prep(predictandname = savename, npreds = None, basedir = basedir, prepare_climdev = do_climdev)
+prepared_data, _ = default_prep(predictandname = savename, npreds = None, basedir = basedir, prepare_climdev = do_climdev ) #, division = extra_division)
 # This prepared data has scaled trainval features, which we cannot scale again in cv mode, therefore replace with unscaled if neccesary
 # NOTE: cv mode scaling/fitting does not happen for the climdev inputs (scaled time and climprobkwargs).
 if crossval_scaling:
@@ -98,7 +108,7 @@ n_eval = 3 # Shuffling and random weight initialization lead to randomness, poss
 depth = 20
 
 newframe, oldlevels, olddtypes = collapse_restore_multiindex(prepared_data.crossval.X_test, axis = 1, inplace = False) # extracting names
-#result = sequential_forward_selection(training_data = (feature_input[:,:],obsinp_trainval), scoring_data = (feature_input[:,:],obsinp_trainval), scoring_fn = score_model, scoring_strategy = 'min', nimportant_vars = depth, variable_names=newframe.columns[:], njobs = 1)
+result = sequential_forward_selection(training_data = (feature_input[:,:],obsinp_trainval), scoring_data = (feature_input[:,:],obsinp_trainval), scoring_fn = score_model, scoring_strategy = 'min', nimportant_vars = depth, variable_names=newframe.columns[:], njobs = 1)
 
 singlepass = result.retrieve_singlepass()
 multipass = result.retrieve_multipass()
