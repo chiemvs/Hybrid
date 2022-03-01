@@ -13,7 +13,7 @@ from sklearn.linear_model import LogisticRegression, LinearRegression
 sys.path.append(os.path.expanduser('~/Documents/Hybrid/'))
 from Hybrid.neuralnet import construct_modeldev_model, construct_climdev_model, reducelr, earlystop, BrierScore, ConstructorAndCompiler
 from Hybrid.optimization import multi_fit_multi_eval, multi_fit_single_eval, ranked_prob_score
-from Hybrid.dataprep import test_trainval_split, filter_predictor_set, multiclass_log_forecastprob, singleclass_regression, multiclass_logistic_regression_coefficients, scale_other_features, generate_balanced_kfold
+from Hybrid.dataprep import test_trainval_split, filter_predictor_set, multiclass_log_forecastprob, singleclass_regression, multiclass_logistic_regression_coefficients, scale_other_features, generate_balanced_kfold, THREEFOLD_DIVISION, extra_division
 from Hybrid.dataloading import prepare_full_set, read_raw_predictand, read_tganom_predictand, read_raw_predictor_regimes 
 
 leadtimepool = list(range(12,16)) #list(range(12,16)) #list(range(19,22)) #[7,8,9,10,11,12,13] #[10,11,12,13,14,15] #[15,16,17,18,19,20,21] # From the longest leadtimepool is taken
@@ -31,12 +31,13 @@ nfolds = 3
 targetname = 'books_paper3-2_tg-ex-q0.75-21D_JJA_45r1_1D_15-t2m-q095-adapted-mean.csv'
 predictors, forc, obs = prepare_full_set(targetname, ndaythreshold = ndaythreshold, predictand_cluster = target_region, leadtimepool = leadtimepool)
 # In case of predictand substitution
-quantile = 0.66
-timeagg = 21
+quantile = 0.5
+timeagg = 31
 if preload: # For instance a predictor set coming from 
     #loadpath = f'/nobackup/users/straaten/predsets/objective_balanced_cv/dynremote/tg-ex-q0.75-21D_ge{ndaythreshold}D_sep12-15_multi_d20_b3_predictors.h5'
-    loadpath = f'/nobackup/users/straaten/predsets/objective_balanced_cv/dynremote/tg-anom_JJA_45r1_{timeagg}D-roll-mean_q{quantile}_sep12-15_multi_d20_b3_predictors.h5'
-    predictors = pd.read_hdf(loadpath, key = 'input').iloc[:,:2]
+    #loadpath = f'/nobackup/users/straaten/predsets/objective_balanced_cv/dynremote/tg-anom_JJA_45r1_{timeagg}D-roll-mean_q{quantile}_sep12-15_multi_d20_b3_predictors.h5'
+    loadpath = f'/nobackup/users/straaten/predsets3f/objective_balanced_cv/tg-anom_JJA_45r1_{timeagg}D-roll-mean_q{quantile}_sep12-15_multi_d20_b3_predictors.h5'
+    predictors = pd.read_hdf(loadpath, key = 'input').iloc[:,:3]
 
 
 """
@@ -51,8 +52,6 @@ modelclimname = f'tg-anom_45r1_1998-06-07_2019-08-31_{timeagg}D-roll-mean_15-t2m
 tgobs, tgforc = read_tganom_predictand(booksname = tganom_name, clustid = target_region, separation = leadtimepool, climname = climname, modelclimname = modelclimname) 
 forc, obs = tgforc.loc[forc.index,:], tgobs.loc[forc.index,:]
 
-#from Hybrid.dataprep import THREEFOLD_DIVISION
-#
 #ex, _ = generate_balanced_kfold(forc.iloc[:,-1], shuffle = True)
 #tg, _ = generate_balanced_kfold(forc2.iloc[:,-1], shuffle = True)
 #comb = pd.concat([ex,tg,np.equal(ex,tg)],axis = 1, keys = [f'ex{ndaythreshold}',f'tg{timeagg}>{quantile}','equal'])
@@ -75,9 +74,11 @@ Predictand replacement with regimes
 """
 Cross validation
 """
-X_test, X_trainval, generator = test_trainval_split(predictors, crossval = crossval, nfolds = nfolds, balanced = balanced)
-forc_test, forc_trainval, generator = test_trainval_split(forc, crossval = crossval, nfolds = nfolds, balanced = balanced)
-obs_test, obs_trainval, generator = test_trainval_split(obs, crossval = crossval, nfolds = nfolds, balanced = balanced)
+division = THREEFOLD_DIVISION
+#division = extra_division
+X_test, X_trainval, generator = test_trainval_split(predictors, crossval = crossval, nfolds = nfolds, balanced = balanced, division = division)
+forc_test, forc_trainval, generator = test_trainval_split(forc, crossval = crossval, nfolds = nfolds, balanced = balanced, division = division)
+obs_test, obs_trainval, generator = test_trainval_split(obs, crossval = crossval, nfolds = nfolds, balanced = balanced, division = division)
 # Observation is already onehot encoded. Make a boolean last-class one for the benchmarks and the RF regressor
 obs_trainval_bool = obs_trainval.iloc[:,focus_class].astype(bool)
 
@@ -265,7 +266,7 @@ if crossval_scaling:
     feature_input, feature_scaler = scale_other_features(final_trainval) 
 model = constructor.fresh_model()
 ###fit_kwargs['shuffle'] = False
-##fit_kwargs['epochs'] = 20
+#fit_kwargs['epochs'] = 5
 model.fit(x = [feature_input, raw_predictions], y=obs_input, validation_split = 0.33, **fit_kwargs)
 #test = combine_input_output(model = model, feature_inputs = feature_input, log_of_raw = raw_predictions, target_class_index = -1, feature_names = final_trainval.columns.to_flat_index(), index = final_trainval.index)
 
