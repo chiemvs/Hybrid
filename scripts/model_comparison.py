@@ -21,7 +21,7 @@ target_region = 9
 ndaythreshold = 7 #[3,7] #7 #[4,9] Switch to list for multiclass (n>2) predictions
 focus_class = -1 # Index of the class to be scored and benchmarked through bss
 multi_eval = True # Single aggregated score or one per fold
-preload = False
+preload = True
 crossval = True
 balanced = True # Whether to use the balanced (hot dry years) version of crossvaldation. Folds are non-consecutive but still split by year. keyword ignored if crossval == False
 crossval_scaling = True # Wether to do also minmax scaling in cv mode
@@ -35,9 +35,9 @@ quantile = 0.5
 timeagg = 31
 if preload: # For instance a predictor set coming from 
     #loadpath = f'/nobackup/users/straaten/predsets/objective_balanced_cv/dynremote/tg-ex-q0.75-21D_ge{ndaythreshold}D_sep12-15_multi_d20_b3_predictors.h5'
-    #loadpath = f'/nobackup/users/straaten/predsets/objective_balanced_cv/dynremote/tg-anom_JJA_45r1_{timeagg}D-roll-mean_q{quantile}_sep12-15_multi_d20_b3_predictors.h5'
+    #loadpath = f'/nobackup/users/straaten/predsets/objective_balanced_cv/tg-anom_JJA_45r1_{timeagg}D-roll-mean_q{quantile}_sep12-15_multi_d20_b3_predictors.h5'
     loadpath = f'/nobackup/users/straaten/predsets3f/objective_balanced_cv/tg-anom_JJA_45r1_{timeagg}D-roll-mean_q{quantile}_sep12-15_multi_d20_b3_predictors.h5'
-    predictors = pd.read_hdf(loadpath, key = 'input').iloc[:,:3]
+    predictors = pd.read_hdf(loadpath, key = 'input').iloc[:,:2]
 
 
 """
@@ -74,8 +74,8 @@ Predictand replacement with regimes
 """
 Cross validation
 """
-division = THREEFOLD_DIVISION
-#division = extra_division
+#division = THREEFOLD_DIVISION
+division = extra_division
 X_test, X_trainval, generator = test_trainval_split(predictors, crossval = crossval, nfolds = nfolds, balanced = balanced, division = division)
 forc_test, forc_trainval, generator = test_trainval_split(forc, crossval = crossval, nfolds = nfolds, balanced = balanced, division = division)
 obs_test, obs_trainval, generator = test_trainval_split(obs, crossval = crossval, nfolds = nfolds, balanced = balanced, division = division)
@@ -284,6 +284,14 @@ climmodel = constructor2.fresh_model()
 climmodel.fit(x = [feature_input, time_input], y=obs_input, validation_split = 0.33, **fit_kwargs)
 
 """
+Different benchmark:
+Logistic regression with the single most important feature and the 
+"""
+lr_s = LogisticRegression()
+#lr_s.fit(y = obs_trainval_bool, X = np.concatenate([feature_input,raw_predictions[:,focus_class:]], axis = 1))
+lr_s.fit(y = obs_trainval_bool, X = np.concatenate([feature_input,forc_trainval.values[:,focus_class:]], axis = 1))
+
+"""
 danger zone
 """
 ## only one leadtime.
@@ -297,10 +305,13 @@ raw_test = multiclass_log_forecastprob(forc_test)
 score = model.evaluate([feature_test,raw_test],obs_test.values)
 climmodel_score = climmodel.evaluate([feature_test,time_test], obs_test.values)
 test_pred = model.predict([feature_test,raw_test])
+#lr_s_pred = lr_s.predict_proba(np.concatenate([feature_test,raw_test[:,focus_class:]], axis = 1))
+lr_s_pred = lr_s.predict_proba(np.concatenate([feature_test,forc_test.values[:,focus_class:]], axis = 1))
 train_pred = model.predict([feature_input, raw_predictions]) 
 print(f'model: {score[-1]}')
 print(f'climmodel: {climmodel_score[-1]}')
 print('raw:', np.mean((obs_test.iloc[:,focus_class] - forc_test.iloc[:,focus_class])**2))
 print('trend:', np.mean((obs_test.iloc[:,focus_class] - lr.predict(time_test))**2))
+print('lrsimple', np.mean((obs_test.iloc[:,focus_class] - lr_s_pred[:,focus_class])**2))
 print('BSS:', 1- score[-1]/np.mean((obs_test.iloc[:,focus_class] - forc_test.iloc[:,focus_class])**2))
 print('CBSS:', 1 - climmodel_score[-1]/np.mean((obs_test.iloc[:,focus_class] - lr.predict(time_test))**2))
