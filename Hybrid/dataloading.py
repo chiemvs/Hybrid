@@ -168,7 +168,8 @@ def prepare_full_set(predictand_name, ndaythreshold: Union[List[int],int], predi
         'books_paper3-3-simple_z-anom_JJA_45r1_31D-roll-mean_1-swvl-local-mean.csv',
         'books_paper3-3-simple_sst-anom_JJA_45r1_21D-roll-mean_1-sst-local-mean.csv',
         'books_paper3-3-simple_sst-anom_JJA_45r1_31D-roll-mean_1-sst-local-mean.csv',
-        'books_paper3-4-4regimes_z-anom_JJA_45r1_21D-frequency_ids.csv',
+         'books_paper3-4-4regimes_z-anom_JJA_45r1_21D-frequency_ids.csv',
+         'books_paper3-4-4regimes_z-anom_JJA_45r1_31D-frequency_ids.csv',
         ],
         'readfunc':[
         read_raw_predictor_ensmean,
@@ -180,10 +181,11 @@ def prepare_full_set(predictand_name, ndaythreshold: Union[List[int],int], predi
         read_raw_predictor_ensmean,
         read_raw_predictor_ensmean,
         read_raw_predictor_regimes,
+        read_raw_predictor_regimes,
         ],
-        'timeagg':[21,31,21,31,21,31,21,31,21],
-        'metric':['mean','mean','mean','mean','mean','mean','mean','mean','freq'],
-        }, index = pd.MultiIndex.from_tuples([('swvl4',21),('swvl4',31),('swvl13',21),('swvl13',31),('z',21),('z',31),('sst',21),('sst',31),('z-reg',21)]))
+        'timeagg':[21,31,21,31,21,31,21,31,21,31],
+        'metric':['mean','mean','mean','mean','mean','mean','mean','mean','freq','freq'],
+        }, index = pd.MultiIndex.from_tuples([('swvl4',21),('swvl4',31),('swvl13',21),('swvl13',31),('z',21),('z',31),('sst',21),('sst',31),('z-reg',21),('z-reg',31)]))
 
     dynamical_predictors = [] 
     for var, timeagg in simple_dynamical_set.index:
